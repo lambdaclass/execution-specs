@@ -278,6 +278,8 @@ class TransactionGeneric(BaseModel, Generic[NumberBoundTypeVar]):
         validate_default=True,
     )
     nonce: NumberBoundTypeVar = Field(0)  # type: ignore
+    nonce_keys: List[NumberBoundTypeVar] | None = None
+    nonce_seq: NumberBoundTypeVar | None = None
     gas_price: NumberBoundTypeVar | None = None
     max_priority_fee_per_gas: NumberBoundTypeVar | None = None
     max_fee_per_gas: NumberBoundTypeVar | None = None
@@ -332,6 +334,8 @@ class TransactionFixtureConverter(TransactionValidateToAsEmptyString):
         default = serializer(self)
         if default is not None and "to" not in default:
             default["to"] = ""
+        if default is not None and default.get("frames") is not None:
+            default.pop("nonce", None)
         return default
 
 
@@ -352,6 +356,8 @@ class TransactionTransitionToolConverter(TransactionValidateToAsEmptyString):
         default = serializer(self)
         if default is not None and "to" not in default:
             default["to"] = None
+        if default is not None and default.get("frames") is not None:
+            default.pop("nonce", None)
         return default
 
 
@@ -536,6 +542,15 @@ class Transaction(
             assert self.sender is not None, (
                 "frame transactions require an explicit sender"
             )
+            if self.nonce_keys is None:
+                self.nonce_keys = [HexNumber(0)]
+            if self.nonce_seq is None:
+                if "nonce" in self.model_fields_set:
+                    self.nonce_seq = HexNumber(self.nonce)
+                elif self.nonce_keys == [HexNumber(0)]:
+                    self.nonce_seq = HexNumber(self.sender.get_nonce())
+                else:
+                    self.nonce_seq = HexNumber(0)
         elif "v" not in self.model_fields_set and self.secret_key is None:
             if self.sender is not None:
                 self.secret_key = self.sender.key
@@ -603,8 +618,16 @@ class Transaction(
             assert self.frames is None, "frames must be None"
             assert self.signatures is None, "signatures must be None"
 
+        if self.frames is None:
+            assert self.nonce_keys is None, "nonce_keys require frames"
+            assert self.nonce_seq is None, "nonce_seq requires frames"
+
         if "nonce" not in self.model_fields_set and self.sender is not None:
-            self.nonce = HexNumber(self.sender.get_nonce())
+            if self.frames is not None:
+                assert self.nonce_seq is not None
+                self.nonce = HexNumber(self.nonce_seq)
+            else:
+                self.nonce = HexNumber(self.sender.get_nonce())
 
     def with_error(
         self, error: List[TransactionException] | TransactionException
@@ -614,6 +637,8 @@ class Transaction(
 
     def with_nonce(self, nonce: int) -> "Transaction":
         """Create a copy of the transaction with a modified nonce."""
+        if self.frames is not None:
+            return self.copy(nonce=nonce, nonce_seq=nonce)
         return self.copy(nonce=nonce)
 
     @cached_property
@@ -952,7 +977,8 @@ class Transaction(
             # EIP-8141: https://eips.ethereum.org/EIPS/eip-8141
             field_list = [
                 "chain_id",
-                "nonce",
+                "nonce_keys",
+                "nonce_seq",
                 "sender",
                 "frames",
                 "signing_signatures",

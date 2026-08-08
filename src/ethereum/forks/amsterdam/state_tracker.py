@@ -273,6 +273,19 @@ def get_storage(
     return tx_state.parent.pre_state.get_storage(address, key)
 
 
+def get_protocol_storage(
+    tx_state: TransactionState, address: Address, key: Bytes32
+) -> U256:
+    """Read protocol-managed storage without recording an EVM access."""
+    if address in tx_state.storage_writes:
+        if key in tx_state.storage_writes[address]:
+            return tx_state.storage_writes[address][key]
+    if address in tx_state.parent.storage_writes:
+        if key in tx_state.parent.storage_writes[address]:
+            return tx_state.parent.storage_writes[address][key]
+    return tx_state.parent.pre_state.get_storage(address, key)
+
+
 def get_storage_original(
     tx_state: TransactionState, address: Address, key: Bytes32
 ) -> U256:
@@ -479,6 +492,18 @@ def set_storage(
 
     """
     assert get_account_optional(tx_state, address) is not None
+    if address not in tx_state.storage_writes:
+        tx_state.storage_writes[address] = {}
+    tx_state.storage_writes[address][key] = value
+
+
+def set_protocol_storage(
+    tx_state: TransactionState,
+    address: Address,
+    key: Bytes32,
+    value: U256,
+) -> None:
+    """Write protocol-managed storage without recording an EVM access."""
     if address not in tx_state.storage_writes:
         tx_state.storage_writes[address] = {}
     tx_state.storage_writes[address][key] = value
@@ -692,6 +717,17 @@ def set_account_balance(
         account.balance = amount
 
     modify_state(tx_state, address, set_balance)
+
+
+def set_account_nonce(
+    tx_state: TransactionState, address: Address, nonce: Uint
+) -> None:
+    """Set an account nonce to an exact protocol-computed value."""
+
+    def set_nonce(account: Account) -> None:
+        account.nonce = nonce
+
+    modify_state(tx_state, address, set_nonce)
 
 
 def increment_nonce(tx_state: TransactionState, address: Address) -> None:

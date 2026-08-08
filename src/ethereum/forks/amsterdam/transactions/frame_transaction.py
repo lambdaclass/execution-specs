@@ -55,6 +55,26 @@ Maximum number of [`Frame`]s allowed per [`FrameTransaction`][ftx].
 [ftx]: ref:ethereum.forks.amsterdam.transactions.frame_transaction.FrameTransaction
 """  # noqa: E501
 
+MAX_NONCE_KEYS: Final[Uint] = Uint(16)
+"""Maximum number of nonce domains selected by a frame transaction."""
+
+MAX_NONCE_SEQ: Final[U64] = U64(2**64 - 1)
+"""Reserved exhausted value for a keyed nonce sequence."""
+
+KEYED_NONCE_FIRST_USE_GAS: Final[Uint] = Uint(20_000)
+"""Gas charged when payment approval consumes a new non-zero nonce key."""
+
+NONCE_MANAGER: Final[Address] = Address(
+    bytes.fromhex("0000000000000000000000000000000000008250")
+)
+"""Protocol-managed account holding non-zero keyed nonce sequences."""
+
+NONCE_MANAGER_CODE: Final[Bytes] = Bytes(bytes.fromhex("60006000fd"))
+"""Runtime code installed at [`NONCE_MANAGER`][nm].
+
+[nm]: ref:ethereum.forks.amsterdam.transactions.frame_transaction.NONCE_MANAGER
+"""
+
 EXPIRY_VERIFIER: Final[Address] = Address(
     bytes.fromhex("0000000000000000000000000000000000008141")
 )
@@ -333,13 +353,18 @@ class FrameTransaction:
     The ID of the chain on which this transaction is executed.
     """
 
-    nonce: U256
+    nonce_keys: Tuple[U256, ...]
     """
-    A scalar value equal to the number of transactions sent by the
-    [`sender`][s].
+    Strictly increasing nonce domains selected by this transaction.
 
-    [s]: ref:ethereum.forks.amsterdam.transactions.frame_transaction.FrameTransaction.sender
+    The singleton key zero selects the sender's legacy account nonce. All
+    other keys select protocol-managed storage under [`NONCE_MANAGER`][nm].
+
+    [nm]: ref:ethereum.forks.amsterdam.transactions.frame_transaction.NONCE_MANAGER
     """  # noqa: E501
+
+    nonce_seq: U64
+    """Shared sequence number required in every selected nonce domain."""
 
     sender: Address
     """
@@ -385,6 +410,27 @@ class FrameTransaction:
     A tuple of objects that represent the versioned hashes of the blobs
     included in the transaction.
     """
+
+
+def nonce_manager_slot(sender: Address, nonce_key: U256) -> Bytes32:
+    """Return the protocol storage slot for ``(sender, nonce_key)``."""
+    sender_word = bytes(sender).rjust(32, b"\x00")
+    key_word = int(nonce_key).to_bytes(32, byteorder="big")
+    return Bytes32(keccak256(sender_word + key_word))
+
+
+def nonce_keys_hash(tx: FrameTransaction) -> Hash32:
+    """Return the canonical fixed-width hash of ``tx.nonce_keys``."""
+    encoded = len(tx.nonce_keys).to_bytes(32, byteorder="big")
+    encoded += b"".join(
+        int(key).to_bytes(32, byteorder="big") for key in tx.nonce_keys
+    )
+    return keccak256(encoded)
+
+
+def nonce_calldata(tx: FrameTransaction) -> Bytes:
+    """Return the nonce fields exactly as priced by EIP-8250."""
+    return Bytes(rlp.encode(tx.nonce_keys) + rlp.encode(tx.nonce_seq))
 
 
 def resolve_frame_target(tx: FrameTransaction, frame: Frame) -> Address:
@@ -588,7 +634,19 @@ def validate_frame_transaction(
         VERSIONED_HASH_VERSION_KZG,
     )
 
-    if tx.nonce >= U256(U64.MAX_VALUE):
+    nonce_key_count = ulen(tx.nonce_keys)
+    if nonce_key_count < Uint(1) or nonce_key_count > MAX_NONCE_KEYS:
+        raise InvalidFrameError("invalid nonce key count")
+    if any(
+        previous >= current
+        for previous, current in zip(
+            tx.nonce_keys, tx.nonce_keys[1:], strict=False
+        )
+    ):
+        raise InvalidFrameError("nonce keys must be strictly increasing")
+    if U256(0) in tx.nonce_keys and tx.nonce_keys != (U256(0),):
+        raise InvalidFrameError("nonce key zero must be selected alone")
+    if tx.nonce_seq >= MAX_NONCE_SEQ:
         raise NonceOverflowError("Nonce too high")
 
     if tx.max_fee_per_gas > Uint(U256.MAX_VALUE):
@@ -709,12 +767,12 @@ def calculate_frame_transaction_intrinsic_cost(
     before execution is started.
 
     The intrinsic cost is the base cost, the per-frame cost, the calldata
-    cost of the byte fields priced as calldata — the `data` of each frame
-    and the `signer`, `message`, and `signature` bytes of each signature
-    entry — and the signature verification cost. Unlike other transaction
-    types, there is no recipient or value component: target access and
-    value transfer are paid during frame execution from each frame's own
-    gas limit.
+    cost of the RLP-encoded nonce fields and byte fields — the `data` of
+    each frame and the `signer`, `message`, and `signature` bytes of each
+    signature entry — and the signature verification cost. Unlike other
+    transaction types, there is no recipient or value component: target
+    access and value transfer are paid during frame execution from each
+    frame's own gas limit.
 
     The calldata floor of [EIP-7623] counts every charged byte uniformly
     per [EIP-7976] and is anchored on the costs the transaction always
@@ -728,8 +786,9 @@ def calculate_frame_transaction_intrinsic_cost(
     from ..vm.gas import GasCosts
     from . import IntrinsicGasCost, count_tokens_in_data
 
-    tokens = Uint(0)
-    data_length = Uint(0)
+    nonce_data = nonce_calldata(tx)
+    tokens = count_tokens_in_data(nonce_data)
+    data_length = ulen(nonce_data)
     for frame in tx.frames:
         tokens += count_tokens_in_data(frame.data)
         data_length += ulen(frame.data)

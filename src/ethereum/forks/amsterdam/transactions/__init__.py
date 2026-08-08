@@ -536,6 +536,24 @@ See [`FeeMarketTransaction`][fmt] for more details.
 """
 
 
+ScalarNonceTransaction = (
+    LegacyTransaction
+    | AccessListTransaction
+    | FeeMarketTransaction
+    | BlobTransaction
+    | SetCodeTransaction
+)
+"""
+Transaction types whose replay protection is a single scalar nonce.
+
+Frame transactions instead carry a set of keyed nonces as per [EIP-8250], and
+are admitted by the keyed-nonce path rather than by [`check_nonce`][cn].
+
+[EIP-8250]: https://eips.ethereum.org/EIPS/eip-8250
+[cn]: ref:ethereum.forks.amsterdam.transactions.check_nonce
+"""
+
+
 BlobCapableTransaction = BlobTransaction | FrameTransaction
 """
 Transaction types that include the [EIP-4844]-style blobs.
@@ -854,9 +872,12 @@ def calculate_max_gas_fee(tx: Transaction, gas_limit: Uint) -> Uint:
     return gas_limit * tx.gas_price
 
 
-def check_nonce(tx: Transaction, sender_nonce: Uint) -> None:
+def check_nonce(tx: ScalarNonceTransaction, sender_nonce: Uint) -> None:
     """
     Check that the transaction's nonce equals the sender's next nonce.
+
+    Frame transactions are excluded: they carry keyed nonces instead of a
+    scalar one, and are admitted by the keyed-nonce path.
     """
     if sender_nonce > Uint(tx.nonce):
         raise NonceMismatchError("nonce too low")

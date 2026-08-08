@@ -99,6 +99,8 @@ from .transactions import (
 from .transactions.frame_transaction import (
     EXPIRY_VERIFIER,
     EXPIRY_VERIFIER_CODE,
+    NONCE_MANAGER,
+    NONCE_MANAGER_CODE,
     FrameTransaction,
 )
 from .utils.address import compute_contract_address
@@ -191,18 +193,26 @@ def apply_fork(old: BlockChain) -> BlockChain:
     Transform the state from the previous hard fork (`old`) into the
     block chain object for this hard fork and return it.
 
-    As required by [EIP-8141], the runtime code of the expiry verifier
-    contract ([`EXPIRY_VERIFIER_CODE`][evc]) is installed at
-    [`EXPIRY_VERIFIER`][ev] when this fork activates. Only the code is
-    installed: the account's other fields are left untouched, so a
-    previously nonexistent account keeps a zero nonce and any balance
-    the account held before the fork is preserved.
+    Install the [EIP-8141] expiry verifier and the [EIP-8250] nonce manager
+    ([`NONCE_MANAGER_CODE`][nmc]) at [`NONCE_MANAGER`][nm]. The nonce manager
+    address is required to have empty code and storage at fork configuration
+    time; initialization preserves any balance and raises its nonce to at
+    least one.
 
     [EIP-8141]: https://eips.ethereum.org/EIPS/eip-8141
+    [EIP-8250]: https://eips.ethereum.org/EIPS/eip-8250
     [ev]: ref:ethereum.forks.amsterdam.transactions.frame_transaction.EXPIRY_VERIFIER
     [evc]: ref:ethereum.forks.amsterdam.transactions.frame_transaction.EXPIRY_VERIFIER_CODE
+    [nm]: ref:ethereum.forks.amsterdam.transactions.frame_transaction.NONCE_MANAGER
+    [nmc]: ref:ethereum.forks.amsterdam.transactions.frame_transaction.NONCE_MANAGER_CODE
     """  # noqa: E501
     state = old.state
+    existing_manager = state.get_account_optional(NONCE_MANAGER)
+    if existing_manager is None:
+        existing_manager = EMPTY_ACCOUNT
+    assert existing_manager.code_hash == EMPTY_CODE_HASH
+    assert not state.account_has_storage(NONCE_MANAGER)
+
     existing_account = state.get_account_optional(EXPIRY_VERIFIER)
     if existing_account is None:
         existing_account = EMPTY_ACCOUNT
@@ -215,6 +225,17 @@ def apply_fork(old: BlockChain) -> BlockChain:
             nonce=existing_account.nonce,
             balance=existing_account.balance,
             code_hash=code_hash,
+        ),
+    )
+
+    manager_code_hash = store_code(state, NONCE_MANAGER_CODE)
+    set_account(
+        state,
+        NONCE_MANAGER,
+        Account(
+            nonce=max(existing_manager.nonce, Uint(1)),
+            balance=existing_manager.balance,
+            code_hash=manager_code_hash,
         ),
     )
     return old

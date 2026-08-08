@@ -1,0 +1,3 @@
+general/code_coverage/eels = Covered in EELS; this suite fills against the local execution specs implementation of EIP-8250.
+general/code_coverage/test_coverage = Run locally with `uv run fill --cov tests/amsterdam/eip8250_keyed_nonces/`.
+general/code_coverage/missed_lines = No missed lines; EIP-8250 adds the keyed nonce fields, their static validity checks, the consume_nonce_set transition, the first-use gas charge, and four TXPARAM indices, each of which this suite exercises on both the accepting and the rejecting side.

@@ -44,6 +44,7 @@ from . import (
     Evm,
     TransactionEnvironment,
     attempt_approval,
+    reapply_payment_approval,
 )
 from .eoa_delegation import resolve_delegated_code_address
 from .exceptions import ExceptionalHalt
@@ -149,13 +150,13 @@ class AtomicBatch:
 
     payer: Optional[Address]
     """
-    The context's payer before the batch began.
+    The context's payer before the batch began. This identifies whether the
+    state snapshot predates payment approval; the payer itself does not roll
+    back.
     """
 
     sender_approved: bool
-    """
-    The context's execution approval before the batch began.
-    """
+    """The execution-approval context before the batch began."""
 
     journal: FrameJournal
     """
@@ -227,19 +228,25 @@ def unroll_atomic_batch(
     """
     Unroll a failed atomic batch.
 
-    The transaction state and the approval fields are restored to the
-    condition immediately before the batch began, and the receipts of
-    the executed batch frames keep their status and gas with their
-    logs emptied. Return the batch's journal copy for the frame loop
-    to continue from — carrying over the live journal's unused gas,
-    because the gas the batch frames consumed remains charged.
+    Ordinary transaction state is restored to the condition immediately
+    before the batch began. Approval effects remain committed; if approval
+    occurred inside the batch, replay its state changes after restoration.
+    Receipts of executed batch frames keep their status and gas with their
+    logs emptied. Return the batch's journal copy while carrying over the
+    live journal's unused gas, because consumed gas remains charged.
     """
     frame_context = tx_env.frame_context
     assert frame_context is not None
 
     restore_tx_state(tx_env.state, batch.state_snapshot)
-    frame_context.payer = batch.payer
+    payment_after_snapshot = (
+        batch.payer is None and frame_context.payer is not None
+    )
     frame_context.sender_approved = batch.sender_approved
+    if payment_after_snapshot:
+        if frame_context.payment_approved_execution:
+            frame_context.sender_approved = True
+        reapply_payment_approval(tx_env)
 
     receipts = frame_context.frame_receipts
     for index in range(int(batch.first_frame_index), len(receipts)):
@@ -335,10 +342,10 @@ def create_evm_from_frame(
 
 def execute_default_verify_code(
     tx_env: TransactionEnvironment, frame: Frame
-) -> FrameReceipt:
+) -> FrameOutcome:
     """
     Execute the protocol default code of a `VERIFY` frame whose
-    resolved target has no code. It consumes no gas.
+    resolved target has no code.
 
     The default code approves the scope allowed by the frame's flags,
     provided the transaction carries an authorizing secp256k1
@@ -353,14 +360,29 @@ def execute_default_verify_code(
     tx = frame_context.tx
     resolved_target = resolve_frame_target(tx, frame)
 
-    failure = FrameReceipt(
-        status=FrameStatus.FAILURE, gas_used=Uint(0), logs=()
+    gas_meter = GasMeter(
+        gas_left=Uint(frame.gas),
+        state_gas_left=Uint(0),
+        state_gas_baseline=Uint(0),
     )
+
+    def outcome(status: FrameStatus) -> FrameOutcome:
+        return FrameOutcome(
+            receipt=FrameReceipt(
+                status=status,
+                gas_used=Uint(frame.gas) - gas_meter.gas_left,
+                logs=(),
+            ),
+            gas_left=gas_meter.gas_left,
+            refund_counter=0,
+            state_gas_used=0,
+            accounts_to_delete=set(),
+        )
 
     allowed_scope = frame.flags & APPROVE_SCOPE_MASK
     # The frame is not allowed to approve anything.
     if not allowed_scope:
-        return failure
+        return outcome(FrameStatus.FAILURE)
 
     if FrameFlag.APPROVE_EXECUTION in allowed_scope:
         signature_index = 0
@@ -369,23 +391,27 @@ def execute_default_verify_code(
 
     # There is no signature entry at the authorizing index.
     if len(tx.signatures) <= signature_index:
-        return failure
+        return outcome(FrameStatus.FAILURE)
     signature = tx.signatures[signature_index]
 
     # Only a protocol-validated secp256k1 signature authorizes.
     if signature.scheme != FrameSignatureScheme.SECP256K1:
-        return failure
+        return outcome(FrameStatus.FAILURE)
     # The signature must cover the canonical signature hash.
     if len(signature.message) != 0:
-        return failure
+        return outcome(FrameStatus.FAILURE)
     # The signature must come from the frame's resolved target.
     if frame_context.resolved_signers[signature_index] != resolved_target:
-        return failure
+        return outcome(FrameStatus.FAILURE)
 
-    if not attempt_approval(tx_env, allowed_scope):
-        return failure
+    try:
+        if not attempt_approval(tx_env, allowed_scope, gas_meter):
+            return outcome(FrameStatus.FAILURE)
+    except ExceptionalHalt:
+        forfeit_remaining_gas(gas_meter)
+        return outcome(FrameStatus.FAILURE)
 
-    return FrameReceipt(status=FrameStatus.SUCCESS, gas_used=Uint(0), logs=())
+    return outcome(FrameStatus.SUCCESS)
 
 
 def execute_frame(
@@ -417,13 +443,7 @@ def execute_frame(
         frame.mode == FrameMode.VERIFY
         and target_account.code_hash == EMPTY_CODE_HASH
     ):
-        return FrameOutcome(
-            receipt=execute_default_verify_code(tx_env, frame),
-            gas_left=Uint(frame.gas),
-            refund_counter=0,
-            state_gas_used=0,
-            accounts_to_delete=set(),
-        )
+        return execute_default_verify_code(tx_env, frame)
 
     if frame.value != U256(0):
         caller_balance = get_account(tx_state, tx_env.origin).balance

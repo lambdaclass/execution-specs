@@ -37,17 +37,25 @@ from ..state_tracker import (
     BlockState,
     TransactionState,
     get_account,
+    get_protocol_storage,
     increment_nonce,
     set_account_balance,
+    set_account_nonce,
+    set_protocol_storage,
 )
 from ..transactions import LegacyTransaction
 from ..transactions.frame_transaction import (
     APPROVE_SCOPE_MASK,
+    KEYED_NONCE_FIRST_USE_GAS,
+    MAX_NONCE_SEQ,
+    NONCE_MANAGER,
     FrameFlag,
     FrameTransaction,
+    nonce_manager_slot,
     resolve_frame_target,
 )
-from .gas import GasMeter
+from .exceptions import InvalidParameter
+from .gas import GasMeter, charge_gas_from_meter
 
 __all__ = ("Environment", "Evm")
 TRANSFER_TOPIC = keccak256(b"Transfer(address,address,uint256)")
@@ -209,6 +217,9 @@ class FrameContext:
     approves payment.
     """
 
+    legacy_nonce: Uint
+    """Sender account nonce observed before any frame executes."""
+
     current_frame_index: Uint
     """
     Index of the frame currently executing, advanced by the frame
@@ -225,6 +236,15 @@ class FrameContext:
     The account that approved paying for the transaction's gas, once
     one has.
     """
+
+    approval_payer_balance: Optional[U256]
+    """Payer balance committed by the successful payment approval."""
+
+    approval_sender_nonce: Optional[Uint]
+    """Sender nonce committed by a successful key-zero approval."""
+
+    payment_approved_execution: bool
+    """Whether the durable payment approval also approved execution."""
 
     sender_approved: bool
     """
@@ -280,12 +300,9 @@ def copy_frame_context(
     Copy a frame transaction's context, to be restored on failure.
 
     Paired with every transaction-state snapshot taken while a frame
-    executes: `APPROVE`'s state-side effects (the sender's nonce
-    increment and the payment escrow) are transaction-state writes
-    that roll back with the state, so the context fields recording the
-    approval must roll back in the same motion. Return `None` for
-    other transaction types, whose environments carry no frame
-    context.
+    executes. The copy restores ordinary execution-only approval and
+    identifies whether a rollback point predates durable payment approval.
+    Return `None` for other transaction types.
     """
     frame_context = tx_env.frame_context
     if frame_context is None:
@@ -300,9 +317,11 @@ def restore_frame_context(
     snapshot: Optional[FrameContext],
 ) -> None:
     """
-    Restore the mutable fields of a frame transaction's context from a
-    copy taken by `copy_frame_context`; a no-op for other transaction
-    types.
+    Restore frame-local context from a copy taken by `copy_frame_context`.
+
+    Execution-only approval follows the ordinary rollback. If the state
+    snapshot predates payment approval, retain its durable context and replay
+    its exact protocol effects after the caller restores frame-local state.
     """
     if snapshot is None:
         return
@@ -310,11 +329,66 @@ def restore_frame_context(
     assert frame_context is not None
     frame_context.current_frame_index = snapshot.current_frame_index
     frame_context.frame_receipts = snapshot.frame_receipts
-    frame_context.payer = snapshot.payer
+    payment_after_snapshot = (
+        snapshot.payer is None and frame_context.payer is not None
+    )
     frame_context.sender_approved = snapshot.sender_approved
+    if payment_after_snapshot:
+        if frame_context.payment_approved_execution:
+            frame_context.sender_approved = True
+        reapply_payment_approval(tx_env)
 
 
-def attempt_approval(tx_env: TransactionEnvironment, scope: FrameFlag) -> bool:
+def consume_nonce_set(tx_env: TransactionEnvironment) -> None:
+    """Consume the frame transaction's selected nonce domains."""
+    frame_context = tx_env.frame_context
+    assert frame_context is not None
+    tx = frame_context.tx
+    if tx.nonce_keys == (U256(0),):
+        increment_nonce(tx_env.state, tx.sender)
+        return
+
+    next_sequence = U256(tx.nonce_seq) + U256(1)
+    for nonce_key in tx.nonce_keys:
+        set_protocol_storage(
+            tx_env.state,
+            NONCE_MANAGER,
+            nonce_manager_slot(tx.sender, nonce_key),
+            next_sequence,
+        )
+
+
+def reapply_payment_approval(tx_env: TransactionEnvironment) -> None:
+    """Restore the exact payment effects removed by a state rollback."""
+    frame_context = tx_env.frame_context
+    assert frame_context is not None
+    payer = frame_context.payer
+    payer_balance = frame_context.approval_payer_balance
+    assert payer is not None
+    assert payer_balance is not None
+
+    tx = frame_context.tx
+    if tx.nonce_keys == (U256(0),):
+        sender_nonce = frame_context.approval_sender_nonce
+        assert sender_nonce is not None
+        set_account_nonce(tx_env.state, tx.sender, sender_nonce)
+    else:
+        next_sequence = U256(tx.nonce_seq) + U256(1)
+        for nonce_key in tx.nonce_keys:
+            set_protocol_storage(
+                tx_env.state,
+                NONCE_MANAGER,
+                nonce_manager_slot(tx.sender, nonce_key),
+                next_sequence,
+            )
+    set_account_balance(tx_env.state, payer, payer_balance)
+
+
+def attempt_approval(
+    tx_env: TransactionEnvironment,
+    scope: FrameFlag,
+    gas_meter: GasMeter,
+) -> bool:
     """
     Attempt an `APPROVE` of `scope` on behalf of the executing frame's
     resolved target, applying its effects on success.
@@ -325,8 +399,8 @@ def attempt_approval(tx_env: TransactionEnvironment, scope: FrameFlag) -> bool:
     transaction's sender. Approving payment requires that no payer is
     set, that execution is approved (by this same scope or earlier),
     and that the resolved target can cover the transaction's maximum
-    cost; it increments the sender's nonce and collects the maximum
-    cost from the resolved target, which becomes the payer.
+    cost; it consumes the transaction's nonce domains and collects the
+    maximum cost from the resolved target, which becomes the payer.
 
     Return whether the approval was granted; a refusal reverts the
     requesting frame.
@@ -365,15 +439,42 @@ def attempt_approval(tx_env: TransactionEnvironment, scope: FrameFlag) -> bool:
         if Uint(payer_balance) < frame_context.max_cost:
             return False
 
+        approval_sender_nonce: Optional[Uint] = None
+        if tx.nonce_keys == (U256(0),):
+            sender_nonce = get_account(tx_env.state, tx.sender).nonce
+            if sender_nonce >= Uint(MAX_NONCE_SEQ):
+                raise InvalidParameter("sender nonce overflow")
+            approval_sender_nonce = sender_nonce + Uint(1)
+        else:
+            first_use_count = sum(
+                get_protocol_storage(
+                    tx_env.state,
+                    NONCE_MANAGER,
+                    nonce_manager_slot(tx.sender, nonce_key),
+                )
+                == U256(0)
+                for nonce_key in tx.nonce_keys
+            )
+            charge_gas_from_meter(
+                gas_meter,
+                KEYED_NONCE_FIRST_USE_GAS * Uint(first_use_count),
+            )
+
     if approves_execution:
         frame_context.sender_approved = True
     if approves_payment:
-        increment_nonce(tx_env.state, tx.sender)
+        payer_balance_after_approval = U256(
+            Uint(payer_balance) - frame_context.max_cost
+        )
+        consume_nonce_set(tx_env)
         set_account_balance(
             tx_env.state,
             resolved_target,
-            U256(Uint(payer_balance) - frame_context.max_cost),
+            payer_balance_after_approval,
         )
+        frame_context.approval_payer_balance = payer_balance_after_approval
+        frame_context.approval_sender_nonce = approval_sender_nonce
+        frame_context.payment_approved_execution = approves_execution
         frame_context.payer = resolved_target
 
     return True

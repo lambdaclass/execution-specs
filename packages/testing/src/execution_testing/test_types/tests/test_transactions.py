@@ -3,10 +3,16 @@
 from typing import Tuple
 
 import pytest
+from ethereum.forks.amsterdam.transactions import decode_transaction
+from ethereum.forks.amsterdam.transactions.frame_transaction import (
+    FrameTransaction,
+)
+from ethereum_types.bytes import Bytes as SpecBytes
 
 from execution_testing.base_types import AccessList, Hash
 
-from ..transaction_types import Transaction
+from ..account_types import EOA
+from ..transaction_types import Frame, Transaction
 
 
 @pytest.mark.parametrize(
@@ -299,3 +305,43 @@ def test_gas_limit_none_alias_is_unset(alias: str) -> None:
     tx = Transaction.model_validate({alias: None})
     assert "gas_limit" not in tx.model_fields_set
     assert tx.gas_limit == 21_000
+
+
+def test_frame_transaction_legacy_nonce_defaults() -> None:
+    """The compatibility key uses the EOA nonce exactly once."""
+    sender = EOA(key=Hash(1), nonce=7)
+    tx = Transaction(sender=sender, frames=[Frame()])
+
+    assert tx.nonce_keys == [0]
+    assert tx.nonce_seq == 7
+    assert tx.nonce == 7
+    assert sender.nonce == 8
+    assert "nonce" not in tx.model_dump(mode="json", by_alias=True)
+
+
+def test_keyed_frame_transaction_does_not_consume_eoa_nonce() -> None:
+    """A non-zero nonce key defaults to sequence zero independently."""
+    sender = EOA(key=Hash(2), nonce=7)
+    tx = Transaction(sender=sender, nonce_keys=[9], frames=[Frame()])
+
+    assert tx.nonce_seq == 0
+    assert sender.nonce == 7
+    assert "nonce" not in tx.model_dump(mode="json", by_alias=True)
+
+
+def test_frame_transaction_rlp_uses_keyed_nonce_fields() -> None:
+    """Type-6 RLP replaces the scalar nonce with key list and sequence."""
+    sender = EOA(key=Hash(3), nonce=11)
+    tx = Transaction(
+        sender=sender,
+        nonce_keys=[3, 7],
+        nonce_seq=5,
+        frames=[Frame()],
+    )
+    tx.sign()
+
+    decoded = decode_transaction(SpecBytes(tx.rlp()))
+    assert isinstance(decoded, FrameTransaction)
+    assert decoded.nonce_keys == (3, 7)
+    assert decoded.nonce_seq == 5
+    assert not hasattr(decoded, "nonce")

@@ -49,7 +49,9 @@ class FixtureTransaction(TransactionFixtureConverter):
     model_config = CamelModel.model_config | {"extra": "ignore"}
 
     chain_id: ZeroPaddedHexNumber | None = None
-    nonce: ZeroPaddedHexNumber
+    nonce: ZeroPaddedHexNumber | None = None
+    nonce_keys: List[ZeroPaddedHexNumber] | None = None
+    nonce_seq: ZeroPaddedHexNumber | None = None
     gas_price: ZeroPaddedHexNumber | None = None
     max_priority_fee_per_gas: ZeroPaddedHexNumber | None = None
     max_fee_per_gas: ZeroPaddedHexNumber | None = None
