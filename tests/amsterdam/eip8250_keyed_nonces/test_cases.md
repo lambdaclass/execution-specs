@@ -126,6 +126,45 @@ helper refuses an override.
 | `test_nonce_calldata_counted_in_floor_above_standard_cost` | Pin `nonce_calldata_tokens` into `calldata_tokens` | One narrow and one 32-byte key, 512 bytes of frame data, floor asserted above standard | `cumulative_gas_used` equals the floor; the arms differ by the 32-byte key-width delta alone | Implemented |
 | `test_calldata_floor_above_standard_cost_exceeds_gas_allowance` | Pin the same two rules on the rejecting side: `nonce_calldata` in the floor is what makes a transaction not fit | Widest key, 512 bytes of frame data, block gas allowance set in turn to the standard cost, the floor recomputed without `nonce_calldata`, one below the floor, and the floor | The first three are rejected for exceeding the gas allowance and the fourth is accepted; the second is the discriminating arm, accepted by any implementation that leaves `nonce_calldata` out of the floor | Implemented |
 
+## Nonce-domain selection — `test_nonce_domain_selection.py`
+
+Every other module exercises one branch of `current_nonce_seq` against a
+state in which the other branch is empty, so an implementation reading or
+writing the wrong account would still satisfy them. These seed the branch
+that must be ignored with a value that disagrees.
+
+| Function Name | Goal | Setup | Expectation | Status |
+| --- | --- | --- | --- | --- |
+| `test_key_zero_domain_ignores_manager_slot_zero` | Prove `[0]` selects the account nonce and never `slot(sender, 0)` | Account nonce 4 with a decoy 9 planted at `slot(sender, 0)`; sequences 4 and 9 | Sequence 4 is valid and advances the account nonce to 5; sequence 9 is rejected as too high; the decoy slot is untouched in both | Implemented |
+| `test_keyed_consumption_writes_only_manager_storage` | Prove the consumed slot lives in the manager, not on the sender | One fresh key, externally owned sender | The manager slot holds 1 and the sender holds nothing at any slot | Implemented |
+
+## Replay scope — `test_replay_scope.py`
+
+| Function Name | Goal | Setup | Expectation | Status |
+| --- | --- | --- | --- | --- |
+| `test_same_key_different_senders_are_independent` | Pin the sender component of the replay triple | Two senders, one shared key, sequence 0 for both, in one block | Two distinct slots each reach 1 and each transaction pays the full first-use surcharge; the slots are asserted unequal before use | Implemented |
+| `test_consumed_slots_persist_and_replay_tuple_is_rejected` | Pin cross-block persistence and replay by tuple rather than by hash | Three blocks: keys 1/2, then disjoint key 3, then the first tuple again under a different priority fee | The disjoint block commits while keys 1/2 stay at 1; the replay is rejected as too low and its block commits nothing; all three slots end at 1 | Implemented |
+
+## Stateful validity stage — `test_stateful_validity_stage.py`
+
+| Function Name | Goal | Setup | Expectation | Status |
+| --- | --- | --- | --- | --- |
+| `test_legacy_domain_tracks_preceding_transaction_in_block` | Prove `tx_legacy_nonce` is read at the transaction's block position | One block: an ordinary transaction then a `[0]` frame transaction; sequences 1 and 0 | Sequence 1 is valid, the sender ends at nonce 2, and both `0x01` and `0x0C` report the mid-block value 1; the block-start sequence 0 is rejected as too low | Implemented |
+| `test_sequence_mismatch_precedes_all_frame_execution` | Prove the sequence check precedes every frame on both domains | Keyed slot planted at 5 and account nonce planted at 3, each with its exact and its `+1` sequence, plus a sentinel-writing frame | The exact arms write the sentinel and advance their domain; the `+1` arms are rejected and leave the sentinel slot zero | Implemented |
+
+## Payload layout — `test_payload_layout.py`
+
+| Function Name | Goal | Setup | Expectation | Status |
+| --- | --- | --- | --- | --- |
+| `test_full_field_payload_layout_vector` | Pin the whole ten-field schema and the frame layout with nothing left at a default | Two keys of different widths, an eight-byte sequence, two frames covering all six frame subfields, a populated signature entry, distinct fee fields | The hand-assembled envelope equals the transaction's serialization, both keys advance to `nonce_seq + 1`, and the `SENDER` frame's target records its calldata and value | Implemented |
+| `test_nonce_field_position_swap_rejected` | Prove `nonce_seq` is read at payload index 2 | `2**64` in `max_priority_fee_per_gas`, then that item exchanged with `nonce_seq` on the wire | Rejected: the value is legal in a `uint256` fee field and above the `uint64` sequence bound | Implemented |
+
+## Key-set introspection at the maximum count — `test_key_set_introspection.py`
+
+| Function Name | Goal | Setup | Expectation | Status |
+| --- | --- | --- | --- | --- |
+| `test_key_set_introspection_at_maximum_count` | Pin `0x0D` and `0x0E` at `MAX_NONCE_KEYS` | Sixteen keys: fifteen single-byte keys and `2**256-1` | Count 16, a hard-coded hash over the 544-byte preimage, first key 1, a derived non-zero sequence read, a canary, and sixteen slots at 1 | Implemented |
+
 ## Notes on fixture formats and checklist rendering
 
 `test_wire_encoding.py` emits `transaction_test` fixtures. That format does
