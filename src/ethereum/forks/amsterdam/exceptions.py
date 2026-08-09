@@ -206,6 +206,23 @@ class InvalidFrameError(InvalidTransaction):
     """  # noqa: E501
 
 
+class RecentRootReferenceCountError(InvalidTransaction):
+    """
+    The transaction declares more recent root references than the limit.
+    """
+
+
+class InvalidRecentRootReferenceError(InvalidTransaction):
+    """
+    A declared recent root reference is not satisfied by the
+    transaction's pre-state.
+
+    Either the reference names a slot that is not over yet or is too old
+    to still be within the root source's rolling window, or the source
+    did not write that root in that slot.
+    """
+
+
 class FrameTransactionExecutionError(InvalidTransaction):
     """
     A frame transaction violated a validity rule that is only checkable

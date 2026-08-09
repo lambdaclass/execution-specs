@@ -287,6 +287,7 @@ class GasCosts:
     OPCODE_FRAMEDATALOAD: Final[ExecutionGas] = VERY_LOW
     OPCODE_FRAMEPARAM: Final[ExecutionGas] = BASE
     OPCODE_SIGPARAM: Final[ExecutionGas] = BASE
+    OPCODE_RECENTROOTREFLOAD: Final[ExecutionGas] = VERY_LOW
 
     # Dynamic Opcode Components
     OPCODE_FRAMEDATACOPY_BASE: Final[ExecutionGas] = VERY_LOW
@@ -308,6 +309,25 @@ class GasCosts:
     OPCODE_LOG_DATA_PER_BYTE: Final[ExecutionGas] = ExecutionGas(Uint(8))
     OPCODE_LOG_TOPIC: Final[ExecutionGas] = ExecutionGas(Uint(375))
     OPCODE_SELFDESTRUCT_BASE: Final[ExecutionGas] = ExecutionGas(Uint(5000))
+
+    # Recent Roots
+    TX_RECENT_ROOT_REFERENCE: Final[ExecutionGas] = ExecutionGas(
+        TX_ACCESS_LIST_STORAGE_KEY
+        + Uint(2) * OPCODE_KECCAK256_BASE
+        + Uint(7) * OPCODE_KECCAK256_PER_WORD
+    )
+    """
+    Intrinsic cost of one recent root reference declared by a
+    [`FrameTransaction`][ftx], named `RECENT_ROOT_REFERENCE_GAS` by
+    [EIP-8272].
+
+    It covers the one storage key the reference declares, and the two
+    hashes — over seven words in total — that deriving that key and the
+    entry expected at it costs.
+
+    [ftx]: ref:ethereum.forks.amsterdam.transactions.frame_transaction.FrameTransaction
+    [EIP-8272]: https://eips.ethereum.org/EIPS/eip-8272
+    """  # noqa: E501
 
 
 MAX_BLOB_GAS_PER_BLOCK: Final[U64] = (

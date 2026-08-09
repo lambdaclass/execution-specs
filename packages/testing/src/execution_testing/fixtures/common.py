@@ -29,6 +29,7 @@ from execution_testing.test_types.transaction_types import (
     AuthorizationTupleGeneric,
     FrameGeneric,
     FrameSignatureGeneric,
+    RecentRootReferenceGeneric,
     Transaction,
 )
 
@@ -119,6 +120,17 @@ class FixtureFrameSignature(FrameSignatureGeneric[ZeroPaddedHexNumber]):
 
     # Allow extra fields: FixtureFrameSignature is constructed from
     # FrameSignature via model_dump(), which may include extra fields.
+    model_config = CamelModel.model_config | {"extra": "ignore"}
+
+
+class FixtureRecentRootReference(
+    RecentRootReferenceGeneric[ZeroPaddedHexNumber]
+):
+    """Fixture variant of the EIP-8272 recent root reference type."""
+
+    # Allow extra fields: FixtureRecentRootReference is constructed from
+    # RecentRootReference via model_dump(), which may include extra
+    # fields.
     model_config = CamelModel.model_config | {"extra": "ignore"}
 
 

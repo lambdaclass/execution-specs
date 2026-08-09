@@ -99,6 +99,7 @@ from .transactions import (
 from .transactions.frame_transaction import (
     EXPIRY_VERIFIER,
     EXPIRY_VERIFIER_CODE,
+    RECENT_ROOT_ADDRESS,
     FrameTransaction,
 )
 from .utils.address import compute_contract_address
@@ -198,9 +199,18 @@ def apply_fork(old: BlockChain) -> BlockChain:
     previously nonexistent account keeps a zero nonce and any balance
     the account held before the fork is preserved.
 
+    [EIP-8272] likewise requires the recent root contract to exist at
+    [`RECENT_ROOT_ADDRESS`][rra] from activation onwards, with a nonce of
+    at least one so that it is never mistaken for an empty account, and
+    with whatever balance it already held. Its runtime code is not yet
+    defined by the specification, so none is installed and the account
+    starts out with no code and no entries.
+
     [EIP-8141]: https://eips.ethereum.org/EIPS/eip-8141
+    [EIP-8272]: https://eips.ethereum.org/EIPS/eip-8272
     [ev]: ref:ethereum.forks.amsterdam.transactions.frame_transaction.EXPIRY_VERIFIER
     [evc]: ref:ethereum.forks.amsterdam.transactions.frame_transaction.EXPIRY_VERIFIER_CODE
+    [rra]: ref:ethereum.forks.amsterdam.transactions.frame_transaction.RECENT_ROOT_ADDRESS
     """  # noqa: E501
     state = old.state
     existing_account = state.get_account_optional(EXPIRY_VERIFIER)
@@ -215,6 +225,22 @@ def apply_fork(old: BlockChain) -> BlockChain:
             nonce=existing_account.nonce,
             balance=existing_account.balance,
             code_hash=code_hash,
+        ),
+    )
+
+    existing_recent_root_account = state.get_account_optional(
+        RECENT_ROOT_ADDRESS
+    )
+    if existing_recent_root_account is None:
+        existing_recent_root_account = EMPTY_ACCOUNT
+
+    set_account(
+        state,
+        RECENT_ROOT_ADDRESS,
+        Account(
+            nonce=max(existing_recent_root_account.nonce, Uint(1)),
+            balance=existing_recent_root_account.balance,
+            code_hash=existing_recent_root_account.code_hash,
         ),
     )
     return old

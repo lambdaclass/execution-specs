@@ -11,10 +11,10 @@ effects of the `APPROVE` instruction, during execution.
 [EIP-8141]: https://eips.ethereum.org/EIPS/eip-8141
 """
 
-from typing import Tuple
+from typing import Set, Tuple
 
 from ethereum_rlp import rlp
-from ethereum_types.bytes import Bytes
+from ethereum_types.bytes import Bytes, Bytes32
 from ethereum_types.numeric import U256, Uint
 
 from ethereum.merkle_patricia_trie import trie_set
@@ -27,13 +27,17 @@ from .blocks import (
     Receipt,
     encode_receipt,
 )
-from .exceptions import MaxCostOverflowError
+from .exceptions import (
+    InvalidRecentRootReferenceError,
+    MaxCostOverflowError,
+)
 from .fork_types import ExecutionGas, StateGas
 from .state_tracker import (
     TransactionState,
     clear_account_preserving_balance,
     create_ether,
     get_account,
+    get_storage_original,
     incorporate_tx_into_block,
 )
 from .transactions import (
@@ -43,7 +47,11 @@ from .transactions import (
     get_transaction_hash,
 )
 from .transactions.frame_transaction import (
+    RECENT_ROOT_ADDRESS,
+    RECENT_ROOT_USABLE_WINDOW,
     FrameTransaction,
+    compute_recent_root_entry_hash,
+    compute_recent_root_storage_key,
     validate_frame_transaction,
 )
 from .vm.frame_interpreter import process_frames
@@ -55,6 +63,68 @@ from .vm.gas import (
     check_max_fee_per_blob_gas,
     settle_transaction_gas,
 )
+
+
+def check_recent_root_references(
+    block_env: vm.BlockEnvironment,
+    tx_state: TransactionState,
+    tx: FrameTransaction,
+) -> Set[Tuple[Address, Bytes32]]:
+    """
+    Check the recent root references a frame transaction declares, and
+    return the storage keys they name.
+
+    A reference is satisfied when the root source it names stored, for
+    the slot it names, an entry committing to that same source, slot, and
+    root. The named slot must also be over — a block cannot reference a
+    root written in its own slot, which is precisely what keeps such a
+    write from displacing an entry the block still relies on — and recent
+    enough that the source has not yet overwritten its entry.
+
+    An unsatisfied reference invalidates the transaction, and with it any
+    block including it; no frame executes. The block's slot number comes
+    from the consensus layer, and never from its timestamp: two blocks
+    proposed for different slots may reference different roots even when
+    their timestamps agree.
+
+    The entries are read from the transaction's pre-state, which is the
+    state left by the preceding transactions of the block. Reading it
+    leaves the transaction's own state accesses untouched; the references
+    bear on execution only through the warm and cold status of what the
+    frames go on to touch.
+
+    Duplicate references are checked, and charged for, one by one, but
+    they name one storage key between them — which is why the returned
+    set may be smaller than the declared list.
+    """
+    storage_keys: Set[Tuple[Address, Bytes32]] = set()
+    for reference in tx.recent_root_references:
+        if (
+            reference.slot >= block_env.slot_number
+            or block_env.slot_number - reference.slot
+            > RECENT_ROOT_USABLE_WINDOW
+        ):
+            raise InvalidRecentRootReferenceError(
+                f"recent root reference to slot {reference.slot} is not "
+                f"referenceable in slot {block_env.slot_number}"
+            )
+
+        storage_key = compute_recent_root_storage_key(
+            reference.source_id, reference.slot
+        )
+        stored_entry = get_storage_original(
+            tx_state, RECENT_ROOT_ADDRESS, storage_key
+        )
+        entry_hash = compute_recent_root_entry_hash(reference)
+        if stored_entry != U256.from_be_bytes(entry_hash):
+            raise InvalidRecentRootReferenceError(
+                f"recent root reference to slot {reference.slot} names a "
+                "root its source did not write in that slot"
+            )
+
+        storage_keys.add((RECENT_ROOT_ADDRESS, storage_key))
+
+    return storage_keys
 
 
 def check_frame_transaction(
@@ -108,6 +178,9 @@ def check_frame_transaction(
         If the gas used by the transaction exceeds the block's gas limit.
     NonceMismatchError :
         If the nonce of the transaction is not equal to the sender's nonce.
+    InvalidRecentRootReferenceError :
+        If a declared recent root reference is not satisfied by the
+        transaction's pre-state.
     InsufficientMaxFeePerGasError :
         If the maximum fee per gas is insufficient for the transaction.
     InsufficientMaxFeePerBlobGasError :
@@ -144,6 +217,10 @@ def check_frame_transaction(
 
     check_nonce(tx, sender_account.nonce)
 
+    recent_root_storage_keys = check_recent_root_references(
+        block_env, tx_state, tx
+    )
+
     # A state gas reservoir holds only gas above `TX_MAX_GAS_LIMIT`,
     # and the derived `max_gas` never exceeds that cap: a frame
     # transaction's reservoir is always empty, and state gas spills
@@ -165,8 +242,10 @@ def check_frame_transaction(
         execution_gas_grant=ExecutionGas(execution_gas_grant),
         state_gas_reservoir=StateGas(Uint(0)),
         calldata_floor=validation.intrinsic.calldata_floor,
-        access_list_addresses=set(),
-        access_list_storage_keys=set(),
+        access_list_addresses=(
+            {RECENT_ROOT_ADDRESS} if recent_root_storage_keys else set()
+        ),
+        access_list_storage_keys=recent_root_storage_keys,
         accounts_with_paid_writes={tx.sender},
         state=tx_state,
         blob_versioned_hashes=tx.blob_versioned_hashes,

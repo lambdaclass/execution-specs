@@ -80,12 +80,14 @@ class FrameJournal:
 
     warm_addresses: Set[Address]
     """
-    Addresses left warm for later frames by successful frames.
+    Addresses warm for every frame: those the transaction itself warmed,
+    plus those left warm by successful frames.
     """
 
     warm_storage_keys: Set[Tuple[Address, Bytes32]]
     """
-    Storage keys left warm for later frames by successful frames.
+    Storage keys warm for every frame: those the transaction itself
+    warmed, plus those left warm by successful frames.
     """
 
     unused_gas: Uint
@@ -508,6 +510,11 @@ def process_frames(
     the environment's origin is rebound to the caller of the frame
     about to run.
 
+    Every frame starts warm with what the transaction itself warmed: its
+    sender, and the recent root entries its references named. Because
+    those are held by the journal rather than by any one frame, a frame
+    that fails cannot cool them.
+
     A failing frame of an atomic batch unrolls the batch, and the
     remaining batch frames are skipped — their allotted gas counts as
     unused.
@@ -525,8 +532,8 @@ def process_frames(
     tx_state = tx_env.state
 
     journal = FrameJournal(
-        warm_addresses={tx.sender},
-        warm_storage_keys=set(),
+        warm_addresses={tx.sender} | tx_env.access_list_addresses,
+        warm_storage_keys=set(tx_env.access_list_storage_keys),
         unused_gas=Uint(0),
         refund_counter=0,
         state_gas_used=0,

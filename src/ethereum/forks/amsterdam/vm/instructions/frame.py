@@ -124,6 +124,8 @@ def txparam(evm: Evm) -> None:
         value = U256(frame_context.current_frame_index)
     elif param == U256(0x0B):
         value = U256(len(tx.signatures))
+    elif param == U256(0x0F):
+        value = U256(len(tx.recent_root_references))
     else:
         raise InvalidParameter("undefined TXPARAM parameter")
 
@@ -254,6 +256,47 @@ def frameparam(evm: Evm) -> None:
         value = frame.value
     else:
         raise InvalidParameter("undefined FRAMEPARAM parameter")
+
+    push(evm.stack, value)
+
+    # PROGRAM COUNTER
+    evm.pc += Uint(1)
+
+
+def recentrootrefload(evm: Evm) -> None:
+    """
+    Push one field of a recent root reference the executing transaction
+    declared onto the stack.
+
+    The reference has already been checked against the transaction's
+    pre-state, so validation code reading it here learns that the root it
+    names was indeed written by the named source in the named slot. The
+    instruction reads the signed envelope alone and never the recent root
+    contract's storage, which is what lets validation code consult a root
+    without reading state it does not own.
+    """
+    # STACK
+    field = pop(evm.stack)
+    index = pop(evm.stack)
+
+    # GAS
+    charge_gas(evm, GasCosts.OPCODE_RECENTROOTREFLOAD)
+
+    # OPERATION
+    frame_context = frame_transaction_context(evm)
+    references = frame_context.tx.recent_root_references
+    if index >= U256(len(references)):
+        raise InvalidParameter("recent root reference index out of bounds")
+    reference = references[int(index)]
+
+    if field == U256(0x00):
+        value = U256.from_be_bytes(reference.source_id)
+    elif field == U256(0x01):
+        value = U256(reference.slot)
+    elif field == U256(0x02):
+        value = U256.from_be_bytes(reference.root)
+    else:
+        raise InvalidParameter("undefined recent root reference field")
 
     push(evm.stack, value)
 

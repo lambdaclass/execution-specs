@@ -40,6 +40,7 @@ from ..exceptions import (
     InvalidFrameError,
     InvalidMaxFeePerBlobGas,
     PriorityFeeGreaterThanMaxFeeError,
+    RecentRootReferenceCountError,
     TransactionGasLimitExceededError,
 )
 from ..fork_types import ExecutionGas, VersionedHash
@@ -91,6 +92,66 @@ EXPIRY_DATA_LENGTH: Final[int] = 8
 """
 Exact length, in bytes, of an expiry verifier frame's data: an unsigned
 big-endian expiry timestamp.
+"""
+
+RECENT_ROOT_ADDRESS: Final[Address] = Address(
+    bytes.fromhex("0000000000000000000000000000000000008272")
+)
+"""
+Address of the recent root contract, introduced in [EIP-8272].
+
+Each root source writing to this contract keeps a rolling window of
+entries in its storage, one per slot it wrote in. A
+[`RecentRootReference`][rrr] names one of those entries, and is valid
+only while the entry is still stored here.
+
+[EIP-8272]: https://eips.ethereum.org/EIPS/eip-8272
+[rrr]: ref:ethereum.forks.amsterdam.transactions.frame_transaction.RecentRootReference
+"""  # noqa: E501
+
+RECENT_ROOT_LENGTH: Final[U64] = U64(8192)
+"""
+Number of entries in a root source's rolling window, and therefore the
+number of storage keys the source occupies under
+[`RECENT_ROOT_ADDRESS`][rra]. Entries are indexed by slot modulo this
+length, so writing in a slot overwrites the entry this many slots older.
+
+[rra]: ref:ethereum.forks.amsterdam.transactions.frame_transaction.RECENT_ROOT_ADDRESS
+"""  # noqa: E501
+
+RECENT_ROOT_USABLE_WINDOW: Final[U64] = RECENT_ROOT_LENGTH - U64(1)
+"""
+Greatest distance, in slots, between a reference's slot and the slot of
+the block referencing it.
+
+One less than [`RECENT_ROOT_LENGTH`][rrl] because the current slot is not
+referenceable: a write made during a slot displaces the entry a whole
+window older, which is already too old to reference, so no write can
+invalidate a reference that is valid when the block executes.
+
+[rrl]: ref:ethereum.forks.amsterdam.transactions.frame_transaction.RECENT_ROOT_LENGTH
+"""  # noqa: E501
+
+MAX_RECENT_ROOT_REFERENCES: Final[Uint] = Uint(16)
+"""
+Maximum number of [`RecentRootReference`][rrr]s a
+[`FrameTransaction`][ftx] may declare, bounding the checks a client
+performs before executing it.
+
+[rrr]: ref:ethereum.forks.amsterdam.transactions.frame_transaction.RecentRootReference
+[ftx]: ref:ethereum.forks.amsterdam.transactions.frame_transaction.FrameTransaction
+"""  # noqa: E501
+
+RECENT_ROOT_ENTRY_DOMAIN: Final[Hash32] = keccak256(b"RECENT_ROOT_ENTRY")
+"""
+Domain separating the entry a root source stores from the storage key it
+is stored at.
+"""
+
+RECENT_ROOT_STORAGE_DOMAIN: Final[Hash32] = keccak256(b"RECENT_ROOT_STORAGE")
+"""
+Domain separating the storage key an entry is stored at from the entry
+itself.
 """
 
 
@@ -320,6 +381,78 @@ class FrameSignature:
 @final
 @slotted_freezable
 @dataclass
+class RecentRootReference:
+    """
+    A root a [`FrameTransaction`][ftx] declares, introduced in
+    [EIP-8272].
+
+    Naming a root in the signed envelope, rather than reading it from
+    storage while the transaction validates itself, is what makes it
+    available to validation code: the protocol checks the reference
+    against the transaction's pre-state before any frame runs, and
+    validation code reads the checked reference back with
+    `RECENTROOTREFLOAD`.
+
+    [ftx]: ref:ethereum.forks.amsterdam.transactions.frame_transaction.FrameTransaction
+    [EIP-8272]: https://eips.ethereum.org/EIPS/eip-8272
+    """  # noqa: E501
+
+    source_id: Bytes32
+    """
+    Identifier of the root source that wrote the root, derived by its
+    writer from the writing address and a salt of its choosing.
+    """
+
+    slot: U64
+    """
+    Consensus slot the root was written in — a slot number, not a
+    timestamp or a block number.
+    """
+
+    root: Bytes32
+    """
+    The root itself, opaque to the protocol: the application that wrote
+    it defines what it commits to.
+    """
+
+
+def compute_recent_root_entry_hash(reference: RecentRootReference) -> Hash32:
+    """
+    Compute the entry a root source stores for a reference.
+
+    The entry commits to the root source, the slot, and the root, so
+    neither an entry a different source wrote nor one an earlier slot
+    left at the same index can satisfy the reference.
+    """
+    return keccak256(
+        RECENT_ROOT_ENTRY_DOMAIN
+        + reference.source_id
+        + reference.slot.to_be_bytes8()
+        + reference.root
+    )
+
+
+def compute_recent_root_storage_key(source_id: Bytes32, slot: U64) -> Bytes32:
+    """
+    Compute the storage key under [`RECENT_ROOT_ADDRESS`][rra] holding a
+    root source's entry for a slot.
+
+    The key commits to the slot's index within the rolling window rather
+    than to the slot itself, which is what bounds a root source's
+    storage to [`RECENT_ROOT_LENGTH`][rrl] keys.
+
+    [rra]: ref:ethereum.forks.amsterdam.transactions.frame_transaction.RECENT_ROOT_ADDRESS
+    [rrl]: ref:ethereum.forks.amsterdam.transactions.frame_transaction.RECENT_ROOT_LENGTH
+    """  # noqa: E501
+    window_index = (slot % RECENT_ROOT_LENGTH).to_be_bytes8()
+    return Bytes32(
+        keccak256(RECENT_ROOT_STORAGE_DOMAIN + source_id + window_index)
+    )
+
+
+@final
+@slotted_freezable
+@dataclass
 class FrameTransaction:
     """
     Transaction type constructed from a series of frames, abstractly defining
@@ -385,6 +518,20 @@ class FrameTransaction:
     A tuple of objects that represent the versioned hashes of the blobs
     included in the transaction.
     """
+
+    recent_root_references: Tuple[RecentRootReference, ...]
+    """
+    Recent roots the transaction declares, introduced in [EIP-8272].
+
+    Each entry is checked against the transaction's pre-state before any
+    [`Frame`] executes, and the whole transaction is invalid if any check
+    fails. Being part of the signed envelope, the set is fixed when the
+    transaction is signed: no frame can add to, remove from, or modify
+    it.
+
+    [EIP-8272]: https://eips.ethereum.org/EIPS/eip-8272
+    [`Frame`]: ref:ethereum.forks.amsterdam.transactions.frame_transaction.Frame
+    """  # noqa: E501
 
 
 def resolve_frame_target(tx: FrameTransaction, frame: Frame) -> Address:
@@ -614,6 +761,13 @@ def validate_frame_transaction(
         if blob_versioned_hash[0:1] != VERSIONED_HASH_VERSION_KZG:
             raise InvalidBlobVersionedHashError("invalid blob versioned hash")
 
+    reference_count = ulen(tx.recent_root_references)
+    if reference_count > MAX_RECENT_ROOT_REFERENCES:
+        raise RecentRootReferenceCountError(
+            f"Tx declares {reference_count} recent root references. "
+            f"Max allowed: {MAX_RECENT_ROOT_REFERENCES}"
+        )
+
     frame_count = ulen(tx.frames)
     if frame_count < Uint(1) or frame_count > MAX_FRAMES_PER_TX:
         raise FrameCountError(actual=frame_count, maximum=MAX_FRAMES_PER_TX)
@@ -718,12 +872,23 @@ def calculate_frame_transaction_intrinsic_cost(
 
     The calldata floor of [EIP-7623] counts every charged byte uniformly
     per [EIP-7976] and is anchored on the costs the transaction always
-    pays regardless of execution — the base cost, the per-frame cost, and
-    the signature verification cost — so it never undercuts the
-    transaction's own intrinsic base.
+    pays regardless of execution — the base cost, the per-frame cost, the
+    signature verification cost, and the per-reference cost — so it never
+    undercuts the transaction's own intrinsic base.
+
+    The recent root references of [EIP-8272] are charged twice over: as
+    calldata, priced from the encoding of the whole list, which is a byte
+    even when the list is empty; and per reference, for the storage key
+    the reference declares and the hashing its check performs. The
+    per-reference charge — the specification's
+    `RECENT_ROOT_REFERENCE_GAS`, preceded once by
+    `RECENT_ROOT_REFERENCE_ADDRESS_GAS` for the contract account — is
+    charged only by a transaction that declares at least one reference,
+    since only such a transaction warms the contract.
 
     [EIP-7623]: https://eips.ethereum.org/EIPS/eip-7623
     [EIP-7976]: https://eips.ethereum.org/EIPS/eip-7976
+    [EIP-8272]: https://eips.ethereum.org/EIPS/eip-8272
     """
     from ..vm.gas import GasCosts
     from . import IntrinsicGasCost, count_tokens_in_data
@@ -745,6 +910,18 @@ def calculate_frame_transaction_intrinsic_cost(
             tokens += count_tokens_in_data(data)
             data_length += ulen(data)
 
+    reference_encoding = rlp.encode(tx.recent_root_references)
+    tokens += count_tokens_in_data(reference_encoding)
+    data_length += ulen(reference_encoding)
+
+    reference_count = ulen(tx.recent_root_references)
+    reference_gas = Uint(0)
+    if reference_count > Uint(0):
+        reference_gas = (
+            GasCosts.TX_ACCESS_LIST_ADDRESS
+            + reference_count * GasCosts.TX_RECENT_ROOT_REFERENCE
+        )
+
     # EIP-7976 floor tokens: all charged bytes count uniformly.
     floor_tokens = data_length * GasCosts.TX_DATA_TOKEN_STANDARD
 
@@ -752,6 +929,7 @@ def calculate_frame_transaction_intrinsic_cost(
         GasCosts.TX_FRAME_INTRINSIC
         + ulen(tx.frames) * GasCosts.TX_PER_FRAME
         + signature_gas
+        + reference_gas
     )
 
     return IntrinsicGasCost(

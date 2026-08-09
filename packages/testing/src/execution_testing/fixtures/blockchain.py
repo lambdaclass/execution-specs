@@ -75,6 +75,7 @@ from .common import (
     FixtureBlobSchedule,
     FixtureFrame,
     FixtureFrameSignature,
+    FixtureRecentRootReference,
     FixtureTransactionReceipt,
 )
 
@@ -703,6 +704,7 @@ class FixtureTransaction(
     initcodes: List[Bytes] | None = None
     frames: List[FixtureFrame] | None = None
     signatures: List[FixtureFrameSignature] | None = None
+    recent_root_references: List[FixtureRecentRootReference] | None = None
 
     @classmethod
     def from_transaction(cls, tx: Transaction) -> Self:

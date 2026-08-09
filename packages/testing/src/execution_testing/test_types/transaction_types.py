@@ -266,6 +266,35 @@ class FrameSignature(FrameSignatureGeneric[HexNumber]):
         )
 
 
+class RecentRootReferenceGeneric(
+    CamelModel, Generic[NumberBoundTypeVar], RLPSerializable
+):
+    """
+    Recent root reference declared by an
+    [EIP-8272](https://eips.ethereum.org/EIPS/eip-8272) frame
+    transaction.
+    """
+
+    source_id: Hash = Field(Hash(0))
+    slot: NumberBoundTypeVar = Field(0)  # type: ignore
+    root: Hash = Field(Hash(0))
+
+    rlp_fields: ClassVar[List[str]] = [
+        "source_id",
+        "slot",
+        "root",
+    ]
+
+
+class RecentRootReference(RecentRootReferenceGeneric[HexNumber]):
+    """
+    Recent root reference within an EIP-8272 frame transaction (test
+    authoring).
+    """
+
+    pass
+
+
 class TransactionGeneric(BaseModel, Generic[NumberBoundTypeVar]):
     """
     Generic transaction type used as a parent for Transaction and
@@ -414,6 +443,7 @@ class Transaction(
 
     frames: List[Frame] | None = None
     signatures: List[FrameSignature] | None = None
+    recent_root_references: List[RecentRootReference] | None = None
 
     secret_key: Hash | None = None
     error: List[TransactionException] | TransactionException | None = Field(
@@ -583,6 +613,10 @@ class Transaction(
                 self.blob_versioned_hashes = []
             if self.max_fee_per_blob_gas is None:
                 self.max_fee_per_blob_gas = HexNumber(0)
+            # EIP-8272: Frame transactions always carry the reference
+            # list, empty when the transaction declares no recent root.
+            if self.recent_root_references is None:
+                self.recent_root_references = []
         elif self.ty != 3:
             assert self.blob_versioned_hashes is None, (
                 "blob_versioned_hashes must be None"
@@ -602,6 +636,10 @@ class Transaction(
             assert self.initcodes is None, "initcodes must be None"
             assert self.frames is None, "frames must be None"
             assert self.signatures is None, "signatures must be None"
+        if self.frames is None:
+            assert self.recent_root_references is None, (
+                "recent_root_references must be None"
+            )
 
         if "nonce" not in self.model_fields_set and self.sender is not None:
             self.nonce = HexNumber(self.sender.get_nonce())
@@ -950,6 +988,8 @@ class Transaction(
         field_list: List[str]
         if self.ty == 6 and self.frames is not None:
             # EIP-8141: https://eips.ethereum.org/EIPS/eip-8141
+            # EIP-8272 appends `recent_root_references`, so the declared
+            # roots are covered by the signature hash.
             field_list = [
                 "chain_id",
                 "nonce",
@@ -960,6 +1000,7 @@ class Transaction(
                 "max_fee_per_gas",
                 "max_fee_per_blob_gas",
                 "blob_versioned_hashes",
+                "recent_root_references",
             ]
         elif self.ty == 6:
             # EIP-7873: https://eips.ethereum.org/EIPS/eip-7873

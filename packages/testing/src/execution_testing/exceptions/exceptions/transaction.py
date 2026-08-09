@@ -211,5 +211,24 @@ class TransactionException(ExceptionBase):
     frame ran before execution approval, a VERIFY frame reverted, or no
     frame approved gas payment).
     """
+    TYPE_6_RECENT_ROOT_REFERENCE_COUNT_EXCEEDED = auto()
+    """
+    Transaction is type 6, but declares more recent root references than
+    the limit.
+    """
+    TYPE_6_INVALID_RECENT_ROOT_REFERENCE = auto()
+    """
+    Transaction is type 6, but a declared recent root reference is not
+    satisfied by its pre-state: the slot is not over yet, is too old to
+    still be referenceable, or the named source did not write that root
+    in that slot.
+    """
+    TYPE_6_INVALID_RECENT_ROOT_REFERENCE_FORMAT = auto()
+    """
+    Transaction is type 6, but contains a recent root reference that has
+    an invalid format: not a list of exactly three items, a source id or
+    root that is not 32 bytes, or a slot that is not a canonical integer
+    below 2**64.
+    """
     LOG_MISMATCH = auto()
     """Transaction receipt logs do not match expected logs."""

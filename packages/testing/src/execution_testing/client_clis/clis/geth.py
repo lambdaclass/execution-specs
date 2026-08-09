@@ -106,6 +106,12 @@ class GethExceptionMapper(ExceptionMapper):
         TransactionException.TYPE_6_INVALID_FRAME_EXECUTION: (
             "invalid frame execution"
         ),
+        TransactionException.TYPE_6_RECENT_ROOT_REFERENCE_COUNT_EXCEEDED: (
+            "too many recent root references"
+        ),
+        TransactionException.TYPE_6_INVALID_RECENT_ROOT_REFERENCE: (
+            "invalid recent root reference"
+        ),
         TransactionException.INITCODE_SIZE_EXCEEDED: (
             "max initcode size exceeded"
         ),

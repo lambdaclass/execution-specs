@@ -1645,6 +1645,7 @@ class Amsterdam(
 
 
 class Bogota(
+    eips.EIP8272,
     eips.EIP8141,
     Amsterdam,
     deployed=False,

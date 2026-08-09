@@ -314,6 +314,13 @@ class ForkLoad:
         ).FrameSignatureScheme
 
     @property
+    def RecentRootReference(self) -> Any:
+        """Recent root reference class of the fork."""
+        return self._module(
+            "transactions.frame_transaction"
+        ).RecentRootReference
+
+    @property
     def Withdrawal(self) -> Any:
         """Withdrawal class of the fork."""
         return self._module("blocks").Withdrawal

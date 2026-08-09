@@ -6156,6 +6156,41 @@ class Opcodes(Opcode, Enum):
     Gas: 2 (params 0x00-0x03)
     """
 
+    # EIP-8272 Recent Root Opcodes
+
+    RECENTROOTREFLOAD = Opcode(
+        0xB5,
+        popped_stack_items=2,
+        pushed_stack_items=1,
+        kwargs=["field", "index"],
+    )
+    """
+    RECENTROOTREFLOAD(field, index)
+    ----
+
+    Description
+    ----
+    Push one field of the chosen recent root reference declared by the
+    executing EIP-8272 frame transaction. Reads the signed envelope
+    only, never the recent root contract's storage. Exceptionally halts
+    when the index is out of bounds or the field is undefined.
+
+    Inputs
+    ----
+    - field: field selector (0x00 source_id, 0x01 slot, 0x02 root)
+    - index: index of the recent root reference
+
+    Outputs
+    ----
+    - value: the requested reference field
+
+    Fork
+    ----
+    Amsterdam
+
+    Gas: 3
+    """
+
 
 _push_opcodes_byte_list: List[Opcode] = [
     Opcodes.PUSH1,

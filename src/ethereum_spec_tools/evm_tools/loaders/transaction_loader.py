@@ -196,6 +196,19 @@ class TransactionLoad:
             signatures.append(signature)
         return tuple(signatures)
 
+    def json_to_recent_root_references(self) -> Any:
+        """Get the recent root references of a frame transaction."""
+        references = []
+        for reference in self.raw.get("recentRootReferences", []):
+            references.append(
+                self.fork.RecentRootReference(
+                    source_id=hex_to_bytes32(reference.get("sourceId")),
+                    slot=parse_hex_or_int(reference.get("slot", 0), U64),
+                    root=hex_to_bytes32(reference.get("root")),
+                )
+            )
+        return tuple(references)
+
     def json_to_v(self) -> U256:
         """Get the v value of the transaction."""
         return hex_to_u256(

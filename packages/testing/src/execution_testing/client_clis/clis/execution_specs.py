@@ -280,6 +280,12 @@ class ExecutionSpecsExceptionMapper(ExceptionMapper):
         TransactionException.TYPE_6_INVALID_FRAME_EXECUTION: (
             "FrameTransactionExecutionError"
         ),
+        TransactionException.TYPE_6_RECENT_ROOT_REFERENCE_COUNT_EXCEEDED: (
+            "RecentRootReferenceCountError"
+        ),
+        TransactionException.TYPE_6_INVALID_RECENT_ROOT_REFERENCE: (
+            "InvalidRecentRootReferenceError"
+        ),
     }
     mapping_regex: ClassVar[Dict[ExceptionBase, str]] = {
         # Temporary solution for issue #1981.
