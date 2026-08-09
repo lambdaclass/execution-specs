@@ -14,7 +14,7 @@ class ReferenceSpec:
 
 
 ref_spec_8250 = ReferenceSpec(
-    "EIPS/eip-8250.md", "81b976ac01591fed2eecb73fa574f27cd18db2e8"
+    "EIPS/eip-8250.md", "c9d962f194b9b167e045b3b68a7a292cdc4cec7f"
 )
 
 
@@ -55,6 +55,9 @@ class Spec:
     STATUS_SKIPPED = 2
 
     TXPARAM_NONCE_SEQ = 0x01
+    # Highest index EIP-8141 assigns. EIP-8250 must not disturb it, so the
+    # tests read it back alongside the indices this EIP adds.
+    TXPARAM_SIGNATURE_COUNT = 0x0B
     TXPARAM_LEGACY_NONCE = 0x0C
     TXPARAM_NONCE_KEY_COUNT = 0x0D
     TXPARAM_NONCE_KEYS_HASH = 0x0E

@@ -4,7 +4,6 @@ import pytest
 from execution_testing import (
     Account,
     Alloc,
-    EIPChecklist,
     Environment,
     Frame,
     FrameReceipt,
@@ -34,8 +33,6 @@ pytestmark = pytest.mark.valid_from("Bogota")
         pytest.param(False, id="verify_completes_valid"),
     ],
 )
-@EIPChecklist.TransactionType.Test.BlockInteractions.SingleTx.Valid()
-@EIPChecklist.TransactionType.Test.BlockInteractions.SingleTx.Invalid()
 def test_verify_revert_unrolls_keyed_consumption(
     state_test: StateTestFiller,
     pre: Alloc,

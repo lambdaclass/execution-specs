@@ -3,7 +3,9 @@
 import pytest
 from execution_testing import (
     Account,
+    Address,
     Alloc,
+    Bytecode,
     Bytes,
     Conditional,
     EIPChecklist,
@@ -16,6 +18,7 @@ from execution_testing import (
     Transaction,
     TransactionException,
     TransactionReceipt,
+    compute_create_address,
 )
 
 from .helpers import approve_bytecode
@@ -43,7 +46,7 @@ def test_first_use_consumes_key_set(
     nonce_keys: list[int],
 ) -> None:
     """
-    Pin R-057--R-060, R-072, R-086--R-089, and R-175.
+    Pin R-036, R-044, R-052, R-053, R-059, and R-092.
 
     Every absent slot starts at zero, so expected storage is hand-derived as
     nonce_seq+1=1 and gas as 20,000 times the enumerated key count.
@@ -106,7 +109,7 @@ def test_legacy_zero_alias_never_manager_slot(
     initial_nonce: int,
 ) -> None:
     """
-    Pin R-050, R-055, R-071, and R-182.
+    Pin R-032, R-035, and the `nonce_keys == [0]` branch of R-044.
 
     Expected sender nonce is the supplied legacy nonce plus one; the manager
     remains empty because the zero-key branch is selected before slot hashing.
@@ -152,7 +155,7 @@ def test_subsequent_key_increment_has_zero_surcharge(
     pre: Alloc,
 ) -> None:
     """
-    Pin R-058, R-072, and R-152.
+    Pin R-036, R-044, R-052, and R-092.
 
     Pre-seeded value 4 advances to the independently computed value 5, while a
     zero-gas frame proves that only absent (zero-valued) slots are surcharged.
@@ -213,7 +216,7 @@ def test_highest_keyed_sequence_becomes_exhausted(
     pre: Alloc,
 ) -> None:
     """
-    Pin R-065, R-072, R-177, and R-178.
+    Pin R-044, R-049, and R-097.
 
     The seeded value MAX-1 advances by literal addition to MAX, independently
     exercising the final permitted transition into the exhausted state.
@@ -276,7 +279,7 @@ def test_first_use_surcharge_one_key_gas_triptych(
     success: bool,
 ) -> None:
     """
-    Pin R-004, R-086--R-089, and R-194.
+    Pin R-004, R-052, R-053, and R-059.
 
     The three gas limits are literal 20,000 minus one, equal, and plus one;
     equality succeeds and writes nonce_seq+1, while the lower case writes none.
@@ -351,7 +354,7 @@ def test_first_use_surcharge_sixteen_key_aggregate(
     success: bool,
 ) -> None:
     """
-    Pin R-006 and R-086--R-089.
+    Pin R-006, R-052, R-053, R-056, and R-059.
 
     Sixteen absent reads require the hand product 16*20,000=320,000. The
     one-below case checks that the aggregate transition leaves every slot zero.
@@ -433,7 +436,7 @@ def test_keyed_sequence_mismatch(
     error: TransactionException,
 ) -> None:
     """
-    Pin R-063--R-068.
+    Pin R-035 and R-040.
 
     The expected high/low error is obtained by directly comparing tx sequence
     one with the hand-seeded current values zero and two before any frame runs.
@@ -460,7 +463,19 @@ def test_keyed_sequence_mismatch(
         error=error,
     )
 
-    state_test(env=Environment(), pre=pre, tx=tx, post={})
+    state_test(
+        env=Environment(),
+        pre=pre,
+        tx=tx,
+        # The seeded sequence must be exactly what it was: a rejected
+        # transaction neither advances the slot nor clears it, and both
+        # seeded values are asserted literally rather than left unstated.
+        post={
+            Spec.NONCE_MANAGER: Account(
+                storage={Spec.nonce_slot(sender, nonce_key): stored_sequence}
+            )
+        },
+    )
 
 
 @pytest.mark.parametrize(
@@ -483,7 +498,7 @@ def test_keyset_requires_one_shared_sequence(
     error: TransactionException | None,
 ) -> None:
     """
-    Pin R-066, R-148, and R-149.
+    Pin R-040 and R-088.
 
     The expected validity is re-derived by comparing scalar 4 independently
     against both hand-seeded slots; success writes scalar+1 to both domains.
@@ -525,7 +540,7 @@ def test_payment_approval_consumes_only_once(
     pre: Alloc,
 ) -> None:
     """
-    Pin R-070, R-073--R-075, R-090, and R-091.
+    Pin R-045 and R-046.
 
     Receipt statuses are hand-enumerated success/success/failure; only the
     first payer transition writes nonce_seq+1, so the final slot equals one.
@@ -587,12 +602,125 @@ def test_payment_approval_consumes_only_once(
     )
 
 
+@EIPChecklist.TransactionType.Test.SenderAccount.Balance()
+def test_refused_payment_approval_leaves_key_unconsumed(
+    state_test: StateTestFiller,
+    pre: Alloc,
+) -> None:
+    """
+    Pin R-050 and R-056 from the failing side of the approval transition.
+
+    `test_payment_approval_consumes_only_once` covers a second payment
+    approval refused *after* a successful one. This covers the opposite
+    order: the first payment-scoped `APPROVE` is refused, and a later one
+    succeeds. R-050 requires clients to apply every EIP-8141 `APPROVE`
+    exceptional-condition check before the keyed-nonce steps, and R-056
+    makes steps 3 through 5 a single transition, so when the approval does
+    not complete no approval effect occurs at all.
+
+    The paymaster holds one wei. A frame transaction's maximum cost is its
+    fee cap times a gas limit that starts at the EIP-8141 intrinsic cost of
+    15,000, so the maximum cost exceeds one wei by construction and the
+    EIP-8141 "resolved target can cover the maximum cost" check refuses the
+    approval; no arithmetic beyond that inequality is needed.
+
+    The discriminating expectation is the third frame's `gas_used`. Its
+    approval is the first one that completes, so R-051 reads an absent slot,
+    `first_use_count` is one, and R-053 deducts exactly one
+    `KEYED_NONCE_FIRST_USE_GAS` from that frame. Had the refused approval
+    consumed the key, the slot would already hold a non-zero value, the
+    surcharge would be zero, and this frame would report zero gas while still
+    succeeding within the same limit -- so the exact value, not merely the
+    success, is what separates the two outcomes. The paymaster's untouched
+    balance pins that no maximum cost was collected either.
+
+    Scope, stated so it is not read as wider than it is: this pins that a
+    refused approval performs no keyed-nonce *consumption*. It does not pin
+    the order of the first-use *gas charge* against the payer-balance check.
+    An implementation that deducts the surcharge and only then refuses on
+    balance leaves the slot absent, so the third frame still reports the full
+    surcharge and this test still passes. Isolating that ordering needs an
+    exact `gas_used` on the refused frame, which for a contract-target frame
+    means hard-coding the fork's cold-account-access price.
+    """
+    sender = pre.fund_eoa()
+    paymaster_balance = 1
+    paymaster = pre.deploy_contract(
+        code=approve_bytecode(Spec.APPROVE_PAYMENT),
+        balance=paymaster_balance,
+    )
+    nonce_key = 0x5EED
+    first_use_gas = Spec.KEYED_NONCE_FIRST_USE_GAS
+
+    tx = Transaction(
+        sender=sender,
+        nonce_keys=[nonce_key],
+        nonce_seq=0,
+        frames=[
+            Frame(
+                mode=Spec.MODE_VERIFY,
+                flags=Spec.APPROVE_EXECUTION,
+                gas_limit=0,
+            ),
+            Frame(
+                mode=Spec.MODE_DEFAULT,
+                flags=Spec.APPROVE_PAYMENT,
+                target=paymaster,
+                gas_limit=100_000,
+            ),
+            Frame(
+                mode=Spec.MODE_VERIFY,
+                flags=Spec.APPROVE_PAYMENT,
+                gas_limit=first_use_gas,
+            ),
+        ],
+        # A payment-only `VERIFY` frame is authorized by the signature entry
+        # at index 1, so the sender signs twice: index 0 for the execution
+        # approval and index 1 for the payment approval it falls back to.
+        signatures=[
+            FrameSignature(
+                scheme=Spec.SCHEME_SECP256K1,
+                signer=Bytes(sender),
+            ),
+            FrameSignature(
+                scheme=Spec.SCHEME_SECP256K1,
+                signer=Bytes(sender),
+                secret_key=sender.key,
+            ),
+        ],
+        expected_receipt=TransactionReceipt(
+            payer=sender,
+            frame_receipts=[
+                FrameReceipt(status=Spec.STATUS_SUCCESS, gas_used=0),
+                FrameReceipt(status=Spec.STATUS_FAILURE),
+                FrameReceipt(
+                    status=Spec.STATUS_SUCCESS,
+                    gas_used=first_use_gas,
+                ),
+            ],
+        ),
+    )
+
+    state_test(
+        env=Environment(),
+        pre=pre,
+        tx=tx,
+        post={
+            sender: Account(nonce=0),
+            paymaster: Account(balance=paymaster_balance),
+            Spec.NONCE_MANAGER: Account(
+                storage={Spec.nonce_slot(sender, nonce_key): 1}
+            ),
+        },
+    )
+
+
 def test_approval_survives_later_frame_revert(
     state_test: StateTestFiller,
     pre: Alloc,
 ) -> None:
     """
-    Pin R-093--R-098, R-144, R-172, R-188, and R-189.
+    Pin R-057 and R-058.
 
     The hard-coded post-state keeps nonce_seq+1 after a later REVERT, directly
     re-deriving the EIP's outer-journal rule rather than using a state helper.
@@ -647,7 +775,7 @@ def test_approval_survives_revert_of_approving_frame(
     pre: Alloc,
 ) -> None:
     """
-    Pin R-093--R-098 and R-144.
+    Pin R-057 and R-058.
 
     A DELEGATECALL reaches APPROVE before the enclosing REVERT; the expected
     slot one and payer effects follow the outer approval journal explicitly.
@@ -724,7 +852,7 @@ def test_protocol_bookkeeping_remains_cold_unmetered(
     expected_sender_nonce: int,
 ) -> None:
     """
-    Pin R-104 and R-190--R-191.
+    Pin R-060.
 
     The expected 6,005 gas is hand-summed from target entry and opcode costs:
     3,000 frame entry, 3 for the PUSH20, the full cold 3,000 manager access
@@ -785,7 +913,7 @@ def test_approval_survives_failed_atomic_batch(
     pre: Alloc,
 ) -> None:
     """
-    Pin R-096, R-098, R-099, and R-144.
+    Pin R-057 and R-058 against an atomic-batch restore.
 
     Expected batch receipts are enumerated success/success/failure/skipped.
     The final frame has status 2 and no state effect because the preceding
@@ -864,7 +992,7 @@ def test_payment_approval_preserves_transiently_funded_payer(
     pre: Alloc,
 ) -> None:
     """
-    Pin R-096, R-098, R-099, R-102, and R-103.
+    Pin R-055, R-057, and R-058.
 
     The payer balance is independently computed as the transient 10**18 credit
     minus the hand-summed 47,284 gas at the fixed price of seven wei.
@@ -957,7 +1085,7 @@ def test_execution_only_approval_reverts_outside_payment_scope(
     pre: Alloc,
 ) -> None:
     """
-    Pin R-073--R-075, R-093--R-096.
+    Pin R-046 and R-057.
 
     Two delegate calls separate execution-only from payment approval; after the
     frame REVERT, the missing durable execution approval makes the tx invalid.
@@ -1005,7 +1133,7 @@ def test_key_zero_preserves_live_nonce_across_batch_rollback(
     pre: Alloc,
 ) -> None:
     """
-    Pin R-071, R-076, R-077, R-096, and R-098.
+    Pin R-044, R-047, R-057, and R-058.
 
     Starting nonce one is incremented by CREATE to two and by approval to
     three; the latter is retained outside the later batch rollback snapshot.
@@ -1068,7 +1196,7 @@ def test_key_zero_approval_rejects_live_nonce_overflow(
     pre: Alloc,
 ) -> None:
     """
-    Pin R-078--R-080, R-177, and R-178.
+    Pin R-048.
 
     MAX-1 plus the earlier CREATE equals MAX; another hand-computed increment
     would exceed the uint64 bound, so approval must fail without effects.
@@ -1100,3 +1228,111 @@ def test_key_zero_approval_rejects_live_nonce_overflow(
     )
 
     state_test(env=Environment(), pre=pre, tx=tx, post={})
+
+
+@pytest.mark.parametrize(
+    "create_count",
+    [
+        pytest.param(1, id="single_create"),
+        pytest.param(2, id="two_creates"),
+        pytest.param(3, id="three_creates"),
+    ],
+)
+@EIPChecklist.TransactionType.Test.SenderAccount.Nonce()
+def test_key_zero_approval_increments_live_nonce_not_sequence(
+    state_test: StateTestFiller,
+    pre: Alloc,
+    create_count: int,
+) -> None:
+    """
+    Pin R-044 (the `nonce_keys == [0]` branch) and R-047.
+
+    R-047: "increments the sender's current account nonce; it does not set
+    the account nonce to `tx.nonce_seq + 1`". Stateful validity forces
+    `nonce_seq` to equal the account nonce at transaction start, so the two
+    readings only diverge once an earlier frame has already moved the live
+    nonce -- the case R-047 names explicitly ("by executing `CREATE` or
+    `CREATE2` at `tx.sender`").
+
+    Frame zero runs `create_count` CREATEs at the sender, taking the live
+    nonce from one to `1 + create_count`; frame one takes the payment
+    approval. Hand-derived expectation, straight from R-047's wording:
+    final nonce = `1 + create_count + 1`. An implementation assigning
+    `tx.nonce_seq + 1` yields two for every arm, so the arms disagree with
+    it by one, two and three respectively.
+
+    No frame carries `ATOMIC_BATCH_FLAG`, which is what makes the assertion
+    load-bearing: with a batch present, a rollback restores the nonce from
+    the separately captured approval snapshot rather than from the
+    consumption step, and the increment itself stops being observable.
+
+    CREATE derives its address from the creator's nonce, so storing each
+    return value makes the live nonce sequence directly observable:
+    slot `i + 1` must hold `keccak256(rlp([sender, 1 + i]))[12:]`. The
+    sentinel in the last slot is written after the CREATEs, so a frame that
+    halts early leaves it zero and fails rather than passing quietly.
+    """
+    initial_nonce = 1
+    canary_slot = 0xFF
+    canary_value = 0xC0DE
+
+    creating_frame_code = Bytecode()
+    for index in range(create_count):
+        creating_frame_code += Op.SSTORE(index + 1, Op.CREATE(0, 0, 0))
+    creating_frame_code += Op.SSTORE(canary_slot, canary_value) + Op.STOP
+
+    sender = pre.deploy_contract(
+        code=Conditional(
+            condition=Op.ISZERO(Op.TXPARAM(0x0A)),
+            if_true=creating_frame_code,
+            if_false=approve_bytecode(Spec.APPROVE_EXECUTION_AND_PAYMENT),
+        ),
+        balance=10**19,
+        nonce=initial_nonce,
+    )
+
+    expected_storage: dict[int, int | Address] = {
+        index + 1: compute_create_address(
+            address=sender, nonce=initial_nonce + index
+        )
+        for index in range(create_count)
+    }
+    expected_storage[canary_slot] = canary_value
+
+    tx = Transaction(
+        sender=sender,
+        nonce_keys=[0],
+        nonce_seq=initial_nonce,
+        frames=[
+            # Sized well above the creating frame's cost rather than
+            # tuned to it: Amsterdam prices each CREATE at 32,000 plus
+            # 183,600 state gas and each fresh SSTORE at 107,920, so a
+            # one-million budget silently starves the three-CREATE arm
+            # and the whole probe collapses back to a bare increment.
+            Frame(mode=Spec.MODE_DEFAULT, gas_limit=4_000_000),
+            Frame(
+                mode=Spec.MODE_DEFAULT,
+                flags=Spec.APPROVE_EXECUTION_AND_PAYMENT,
+                gas_limit=300_000,
+            ),
+        ],
+        expected_receipt=TransactionReceipt(
+            payer=sender,
+            frame_receipts=[
+                FrameReceipt(status=Spec.STATUS_SUCCESS),
+                FrameReceipt(status=Spec.STATUS_SUCCESS),
+            ],
+        ),
+    )
+
+    state_test(
+        env=Environment(),
+        pre=pre,
+        tx=tx,
+        post={
+            sender: Account(
+                nonce=initial_nonce + create_count + 1,
+                storage=expected_storage,
+            )
+        },
+    )

@@ -12,10 +12,13 @@ EIP admits, over a key set that mixes the narrowest and the widest key the
 type allows.
 """
 
+from typing import List
+
 import pytest
 from execution_testing import (
     Account,
     Alloc,
+    Conditional,
     EIPChecklist,
     Environment,
     Frame,
@@ -23,6 +26,7 @@ from execution_testing import (
     Op,
     StateTestFiller,
     Transaction,
+    TransactionException,
 )
 
 from .spec import Spec, ref_spec_8250
@@ -134,6 +138,136 @@ def test_key_set_introspection_at_maximum_count(
             Spec.NONCE_MANAGER: Account(
                 storage={
                     Spec.nonce_slot(sender, key): 1 for key in MAXIMUM_KEY_SET
+                }
+            ),
+        },
+    )
+
+
+@pytest.mark.parametrize(
+    "nonce_keys,accepted",
+    [
+        pytest.param([0], True, id="legacy_alias_admitted"),
+        pytest.param(
+            [7],
+            False,
+            id="single_non_zero_key_refused",
+            marks=pytest.mark.exception_test,
+        ),
+        pytest.param(
+            [1, 2],
+            False,
+            id="two_key_set_refused",
+            marks=pytest.mark.exception_test,
+        ),
+    ],
+)
+@EIPChecklist.TransactionType.Test.TxScopedAttributes.Read()
+def test_legacy_assumption_guard_admits_only_the_zero_key_alias(
+    state_test: StateTestFiller,
+    pre: Alloc,
+    nonce_keys: List[int],
+    accepted: bool,
+) -> None:
+    """
+    Pin R-086: the guard the EIP prescribes for verifier code that predates
+    keyed nonces -- `TXPARAM(0x0D) == 1 and TXPARAM(0x10) == 0` -- must admit
+    exactly the transactions on which `TXPARAM(0x01)` is still the legacy
+    account nonce, and refuse every other key set.
+
+    The rule is advice to contract authors, so the only way to pin it is to
+    deploy the advice and show it works. The verifier here is that guard and
+    nothing else: it runs in a `VERIFY` frame, stops when both conjuncts
+    hold, and reverts otherwise. EIP-8141 makes a reverting `VERIFY` frame
+    invalidate the whole transaction, so "the guard refused" and "the
+    transaction was not included" are the same observation.
+
+    The expectations follow from reading the two conjuncts against each key
+    set:
+
+    - `[0]` is the alias the guard exists to admit. Count is one and the
+      first key is zero, so both conjuncts hold.
+    - `[7]` has count one as well, so the `TXPARAM(0x10) == 0` conjunct is
+      the only one that can reject it, and it is the arm that isolates
+      that conjunct: a client reporting a first key of zero for every key
+      set would be admitted here and nowhere else in this test.
+    - `[1, 2]` is the multi-key refusal R-091 warns about, where an
+      attacker appends keys the verifier never authenticated. Both
+      conjuncts fail on it, so it isolates neither; it is here because a
+      guard demonstrated only against single-key sets leaves the case the
+      security note actually names unstated.
+
+    The count conjunct cannot be isolated at all, and that is a property of
+    the EIP rather than a gap in this test: R-031 rejects any key set that
+    contains `0` alongside another key, so `TXPARAM(0x10) == 0` already
+    implies the singleton `[0]` and `TXPARAM(0x0D) == 1` with it. No key set
+    exists that satisfies the second conjunct and violates the first.
+
+    The sentinel is what makes the admitted arm capable of failing. It is
+    written by a later frame, after the guard has run, so it is present only
+    when the transaction completed; on the refused arms the transaction is
+    never included and the slot stays zero, which the post-state asserts
+    rather than leaving unstated. The approving frame is given exactly the
+    surcharge its own key set costs -- nothing for `[0]`, one per fresh
+    key otherwise -- so a refusal cannot be an out-of-gas in disguise.
+    """
+    sender = pre.fund_eoa()
+    guard = pre.deploy_contract(
+        code=Conditional(
+            condition=Op.AND(
+                Op.EQ(Op.TXPARAM(Spec.TXPARAM_NONCE_KEY_COUNT), 1),
+                Op.EQ(Op.TXPARAM(Spec.TXPARAM_NONCE_KEY_0), 0),
+            ),
+            if_true=Op.STOP,
+            if_false=Op.REVERT(0, 0),
+        )
+    )
+    probe = pre.deploy_contract(code=Op.SSTORE(0, SENTINEL) + Op.STOP)
+    first_use_gas = (
+        0
+        if nonce_keys == [0]
+        else Spec.KEYED_NONCE_FIRST_USE_GAS * len(nonce_keys)
+    )
+
+    tx = Transaction(
+        sender=sender,
+        nonce_keys=nonce_keys,
+        nonce_seq=0,
+        frames=[
+            Frame(
+                mode=Spec.MODE_VERIFY,
+                flags=Spec.APPROVE_EXECUTION_AND_PAYMENT,
+                gas_limit=first_use_gas,
+            ),
+            Frame(
+                mode=Spec.MODE_VERIFY,
+                target=guard,
+                gas_limit=100_000,
+            ),
+            Frame(
+                mode=Spec.MODE_DEFAULT,
+                target=probe,
+                gas_limit=1_000_000,
+            ),
+        ],
+        error=(
+            None
+            if accepted
+            else TransactionException.TYPE_6_INVALID_FRAME_EXECUTION
+        ),
+    )
+
+    state_test(
+        env=Environment(),
+        pre=pre,
+        tx=tx,
+        post={
+            probe: Account(storage={0: SENTINEL if accepted else 0}),
+            Spec.NONCE_MANAGER: Account(
+                storage={
+                    Spec.nonce_slot(sender, key): 0
+                    for key in nonce_keys
+                    if key != 0
                 }
             ),
         },

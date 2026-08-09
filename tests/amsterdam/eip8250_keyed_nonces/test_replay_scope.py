@@ -18,7 +18,6 @@ from execution_testing import (
     Alloc,
     Block,
     BlockchainTestFiller,
-    EIPChecklist,
     Frame,
     FrameReceipt,
     Transaction,
@@ -79,7 +78,6 @@ def consuming_transaction(
     )
 
 
-@EIPChecklist.TransactionType.Test.BlockInteractions.SingleTx.Valid()
 def test_same_key_different_senders_are_independent(
     blockchain_test: BlockchainTestFiller,
     pre: Alloc,
@@ -132,7 +130,6 @@ def test_same_key_different_senders_are_independent(
 
 
 @pytest.mark.exception_test
-@EIPChecklist.TransactionType.Test.BlockInteractions.LastTx.Invalid()
 def test_consumed_slots_persist_and_replay_tuple_is_rejected(
     blockchain_test: BlockchainTestFiller,
     pre: Alloc,

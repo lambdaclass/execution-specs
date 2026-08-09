@@ -79,10 +79,11 @@ def test_payload_exact_rlp_and_signature_vector(
     pre: Alloc,
 ) -> None:
     """
-    Pin R-017--R-028, R-146, R-148, and R-181.
+    Pin R-014, R-015, R-017 and R-018.
 
-    The expected payload was hand-assembled from canonical RLP and its signing
-    hash was independently fixed from Keccak(type-byte || payload).
+    The expected payload was hand-assembled from canonical RLP in the field
+    order R-015 lists, and its signing hash was independently fixed from
+    Keccak(type-byte || payload) over that same payload.
     """
     sender = EOA(bytes.fromhex("11" * 20))
     tx = Transaction(
@@ -130,7 +131,7 @@ def test_nonce_calldata_pricing_vectors(
     floor_gas: int,
 ) -> None:
     """
-    Pin the `nonce_calldata` encoding vectors of R-029 and R-030.
+    Pin the `nonce_calldata` encoding vectors of R-019 and R-020.
 
     Each byte string is hand-encoded RLP, and the token counts beside it are
     independently counted as zeros + 4*nonzeros and 4*zeros + 16*nonzeros.
@@ -173,7 +174,7 @@ def test_storage_slot_hardcoded_vectors(
     pre: Alloc,
 ) -> None:
     """
-    Pin R-051--R-054, R-056, R-150, and R-151.
+    Pin R-034.
 
     Expected slots are hard-coded Keccak results over the explicitly built
     64-byte left-padded sender and big-endian key preimages.
@@ -208,11 +209,13 @@ def test_erc4337_key_width_subset_vector(
     nonce_key: int,
 ) -> None:
     """
-    Pin R-021, R-146, and R-147.
+    Pin R-016 and R-044 across the ERC-4337 key width and above it.
 
     Fixed-width byte conversion proves the 24-byte maximum has eight leading
-    zero bytes, while arithmetic shows wider EIP-8250 uint256 keys remain
-    valid.
+    zero bytes, while arithmetic shows wider keys remain inside the `uint256`
+    domain R-016 gives `nonce_keys`, up to the `2**256` bound R-028 rejects
+    at. Each width is then consumed, and the slot holds `nonce_seq + 1 == 1`
+    straight from R-044.
     """
     largest_4337_key = 2**192 - 1
     assert largest_4337_key.to_bytes(32, "big") == b"\x00" * 8 + b"\xff" * 24
@@ -247,7 +250,7 @@ def test_signature_commits_entire_visible_keyset(
     pre: Alloc,
 ) -> None:
     """
-    Pin R-027, R-028, R-115, R-161, and R-162.
+    Pin R-018 and R-089.
 
     The two expected hashes are hard-coded vectors; only the second numeric key
     differs, so unequal hashes independently demonstrate whole-keyset binding.

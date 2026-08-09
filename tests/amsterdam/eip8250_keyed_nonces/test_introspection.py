@@ -10,7 +10,6 @@ from execution_testing import (
     Op,
     StateTestFiller,
     Transaction,
-    TransactionReceipt,
 )
 
 from .spec import Spec, ref_spec_8250
@@ -27,12 +26,17 @@ def test_manager_direct_call_empty_revert(
     pre: Alloc,
 ) -> None:
     """
-    Pin R-003, R-011, R-061, R-062, R-179, and R-180.
+    Pin R-003, R-011, R-037, and R-098.
 
     Bytecode 60 00 60 00 fd is manually decoded as REVERT(0,0). A caller
     records CALL, STATICCALL, and value-bearing CALL status and returndata
     length; all are hard-coded to zero, and the manager's forced 123 wei
     balance is unchanged because the value-bearing subcall reverts.
+
+    The revert is observed through those seven storage slots and not through
+    a transaction-level receipt: `verify_transaction_receipt` compares only
+    `cumulative_gas_used` and `logs`, so a `status` expectation would be
+    accepted and never checked.
     """
     sender = pre.fund_eoa()
     caller = pre.deploy_contract(
@@ -74,7 +78,6 @@ def test_manager_direct_call_empty_revert(
         sender=sender,
         to=caller,
         gas_limit=1_000_000,
-        expected_receipt=TransactionReceipt(status=1),
     )
 
     state_test(
@@ -102,7 +105,7 @@ def test_keyed_nonce_txparams(
     pre: Alloc,
 ) -> None:
     """
-    Pin R-007--R-010 and R-109--R-115.
+    Pin R-007--R-010, R-061, and R-063--R-067.
 
     Scalar returns are literal inputs and the key hash is a hard-coded Keccak
     vector over bytes32(2)||bytes32(1)||bytes32(2).
@@ -169,7 +172,7 @@ def test_legacy_nonce_snapshot_survives_key_zero_approval(
     pre: Alloc,
 ) -> None:
     """
-    Pin R-063 and R-116--R-119.
+    Pin R-063, R-069, and R-070.
 
     The pre-frame nonce seven is hard-coded in both introspection slots, while
     the independently computed live post-approval account nonce is eight.

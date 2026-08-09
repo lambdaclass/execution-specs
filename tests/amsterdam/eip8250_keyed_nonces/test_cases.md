@@ -1,6 +1,6 @@
 # EIP-8250 Keyed Nonces — Test Plan
 
-Reference spec: `EIPS/eip-8250.md` @ `81b976ac01591fed2eecb73fa574f27cd18db2e8`.
+Reference spec: `EIPS/eip-8250.md` @ `c9d962f194b9b167e045b3b68a7a292cdc4cec7f`.
 All tests are gated on `valid_from("Bogota")`, the pseudo-fork that registers
 the `EIP8250` mixin on top of `EIP8141`.
 
@@ -21,7 +21,8 @@ the `EIP8250` mixin on top of `EIP8141`.
 | --- | --- | --- | --- | --- |
 | `test_nonce_key_collection_bounds` | Pin the 1..16 key-count bound | Key counts 0, 1, 16, 17 | 0 and 17 rejected as invalid frame format; 1 and 16 consume every selected key | Implemented |
 | `test_strict_numeric_order_and_zero_singleton` | Pin strict numeric ordering and the zero singleton | Duplicate, descending, mixed-zero, `[0]`, ascending, `[255,256]` | The first three are rejected; `[255,256]` proves numeric rather than lexicographic order | Implemented |
-| `test_invalid_nonce_fields` | Sweep every malformed field shape in one place | Five malformed key lists plus `nonce_seq == MAX_NONCE_SEQ` on a slot pre-advanced to `MAX_NONCE_SEQ` | Each is rejected; the reserved sequence isolates the `nonce_seq < MAX_NONCE_SEQ` rule from the per-key equality rule | Implemented |
+| `test_strict_increase_position_sweep` | Pin strict increase where the violation sits away from the opening pair (R-030) | `[1,3,2]`, sixteen keys repeating only in the last position, `[256,2]`, control `[1,2,3]` | All three are rejected: a comparison of only the first pair, only the endpoints, or only the byte-string order accepts one of them. The control shares their key widths and per-key frame gas | Implemented |
+| `test_invalid_nonce_fields` | Pin the reserved exhausted sequence | `nonce_seq == MAX_NONCE_SEQ` on a slot pre-advanced to `MAX_NONCE_SEQ` | Rejected; seeding the slot to the same value isolates the `nonce_seq < MAX_NONCE_SEQ` rule from the per-key equality rule, so only the reserved-sequence rule can fire. The five malformed key lists this case used to repeat are covered by the two tests above, against the same expected exception | Implemented |
 
 ## State transition and gas — `test_keyed_nonces.py`
 
@@ -42,8 +43,10 @@ the `EIP8250` mixin on top of `EIP8141`.
 | `test_approval_survives_failed_atomic_batch` | Pin durability against a batch rollback | Batch with a failing member and a skipped successor | Statuses success/success/failure/skipped; the slot survives the rollback | Implemented |
 | `test_payment_approval_preserves_transiently_funded_payer` | Pin paymaster payment | Payer funded inside a batch that later rolls back | Payer balance equals the transient credit minus hand-summed gas | Implemented |
 | `test_execution_only_approval_reverts_outside_payment_scope` | Prove execution-only approval is not payment | Separate execution and payment delegate calls, then a revert | The transaction is invalid for want of a durable approval | Implemented |
-| `test_key_zero_preserves_live_nonce_across_batch_rollback` | Pin the key-zero increment semantics | Contract sender bumped by `CREATE` then by approval | Final nonce is 3: the increment is of the live nonce, not `nonce_seq+1` | Implemented |
+| `test_key_zero_preserves_live_nonce_across_batch_rollback` | Pin that the approval's nonce effect outlives an atomic-batch rollback | Contract sender bumped by `CREATE` then by approval, inside a batch that later rolls back | Final nonce is 3, so the approval effect is journaled outside the batch snapshot. This arm does not pin the increment's magnitude: under a rollback the value is restored from the approval snapshot rather than written by `consume_nonce_set` — that is `test_key_zero_approval_increments_live_nonce_not_sequence`'s job | Implemented |
 | `test_key_zero_approval_rejects_live_nonce_overflow` | Pin key-zero overflow | Sender nonce at `MAX_NONCE_SEQ-1`, bumped by `CREATE` | Approval fails with no effects | Implemented |
+| `test_key_zero_approval_increments_live_nonce_not_sequence` | Pin that key-zero approval increments the *live* account nonce rather than assigning `nonce_seq+1` | Contract sender at nonce 1 runs 1, 2 or 3 CREATEs in an unbatched frame, then a later frame takes the payment approval | Final nonce is 3, 4 or 5, and each CREATE address is stored so the live nonce sequence is observable; an implementation assigning `tx.nonce_seq+1` yields 2 in every arm | Implemented |
+| `test_refused_payment_approval_leaves_key_unconsumed` | Pin that a refused payment approval consumes nothing | Paymaster holding one wei refuses, then the sender approves | The succeeding frame is charged the full first-use surcharge, the slot reaches one, and the paymaster keeps its wei | Implemented |
 
 ## Introspection — `test_introspection.py`
 
@@ -58,6 +61,7 @@ the `EIP8250` mixin on top of `EIP8141`.
 | Function Name | Goal | Setup | Expectation | Status |
 | --- | --- | --- | --- | --- |
 | `test_block_order_overlap_and_disjoint_domains` | Pin per-position sequence evaluation | Overlapping vs disjoint key sets from one sender | The overlapping second transaction is invalid at its block position; disjoint sets both commit | Implemented |
+| `test_intra_block_chained_same_key` | Pin the valid direction of the same rule | One sender, one block, the identical single-key set at sequences zero then one | Both commit, the slot ends at two, and the second approving frame is given zero gas because its key is no longer fresh | Implemented |
 
 ## TXPARAM index gap and scoping — `test_txparam_scoping.py`
 
@@ -65,6 +69,7 @@ the `EIP8250` mixin on top of `EIP8141`.
 | --- | --- | --- | --- | --- |
 | `test_undefined_txparam_index_halts` | Prove `0x0F` and `0x11` stay undefined | One bytecode, three indices, identical gas | The defined `0x0D` control stores the canary and the count 2; the undefined indices halt exceptionally, discard both writes, and burn the whole frame gas limit | Implemented |
 | `test_txparam_values_are_transaction_scoped` | Prove the parameters never move mid-transaction | Read all five, `CREATE`, read all five again | Both slot ranges hold the same values even though approval and `CREATE` advanced two different account nonces | Implemented |
+| `test_inherited_signature_count_index_unchanged` | Prove the four added indices conflict with nothing | Two signatures, three keys, first key five — pairwise distinct | `0x0B` still reports the signature count two beside `0x0D` three and `0x10` five, plus a canary | Implemented |
 
 ## Block composition — `test_block_interactions.py`
 
@@ -72,6 +77,8 @@ the `EIP8250` mixin on top of `EIP8141`.
 | --- | --- | --- | --- | --- |
 | `test_mixed_transaction_types_share_block` | Prove non-frame types are unaffected | Plain, keyed frame, and key-zero frame transactions in one block | Each domain advances independently and the plain target records its canary | Implemented |
 | `test_keyed_validity_independent_of_legacy_nonce_advance` | Defeat the legacy-nonce cancellation strategy | One sender sends a plain transaction then a keyed frame transaction | Final account nonce is exactly 1 — the plain transaction's increment only — and the keyed transaction still commits | Implemented |
+| `test_sole_transaction_gas_allowance_boundary` | Locate the block-gas threshold for a block's only transaction at its inclusion anchor | One keyed transaction whose frames consume exactly their limits, in a block supplying the anchor and a block supplying one gas less | The anchor block includes it and spends exactly the anchor; the one-short block rejects it for the gas allowance and leaves the slot absent | Implemented |
+| `test_last_transaction_gas_allowance_boundary` | Locate the same threshold for a closing transaction against the block's remainder | Two anchored keyed transactions from two senders, in a block supplying both anchors and a block supplying one gas less | Both commit when the block supplies the sum; one gas short, only the closing transaction fails and the whole block is rejected | Implemented |
 
 ## VERIFY durability boundary — `test_verify_frame_durability.py`
 
@@ -137,6 +144,8 @@ that must be ignored with a value that disagrees.
 | --- | --- | --- | --- | --- |
 | `test_key_zero_domain_ignores_manager_slot_zero` | Prove `[0]` selects the account nonce and never `slot(sender, 0)` | Account nonce 4 with a decoy 9 planted at `slot(sender, 0)`; sequences 4 and 9 | Sequence 4 is valid and advances the account nonce to 5; sequence 9 is rejected as too high; the decoy slot is untouched in both | Implemented |
 | `test_keyed_consumption_writes_only_manager_storage` | Prove the consumed slot lives in the manager, not on the sender | One fresh key, externally owned sender | The manager slot holds 1 and the sender holds nothing at any slot | Implemented |
+| `test_slot_preimage_order_discriminator` | Pin the slot preimage positionally, naming the layouts it is not (R-033, R-034) | Contract sender carrying a sentinel at slot `0xC0`, keys 1 and `2**256-1` | Each `keccak256(left_pad_32(sender) ‖ bytes32(key))` slot holds 1 while five misderivations per key — swapped operands, right-padded sender, unpadded sender, Solidity nested mapping, unhashed key — all read 0; both selected slots read 0 in the sender's own storage while the sentinel survives, and the sender's nonce stays 1 | Implemented |
+| `test_payment_approval_nonce_effect_follows_selected_domain` | Prove payment approval's nonce effect is dispatched on the selected domain, i.e. the EIP-8141 increment is replaced rather than supplemented (R-043) | One sender at account nonce 7 with `slot(sender, 6)` seeded to 3; one block holding a keyed transaction at sequence 3 followed by a `[0]` transaction at sequence 7 | The keyed leg moves only the slot, 3 to 4; the `[0]` leg is valid only because the account nonce is still 7 and moves only that nonce, 7 to 8; `slot(sender, 0)` is never written. Both frames run on zero gas, so any surcharge would fail the block | Implemented |
 
 ## Replay scope — `test_replay_scope.py`
 
@@ -164,6 +173,7 @@ that must be ignored with a value that disagrees.
 | Function Name | Goal | Setup | Expectation | Status |
 | --- | --- | --- | --- | --- |
 | `test_key_set_introspection_at_maximum_count` | Pin `0x0D` and `0x0E` at `MAX_NONCE_KEYS` | Sixteen keys: fifteen single-byte keys and `2**256-1` | Count 16, a hard-coded hash over the 544-byte preimage, first key 1, a derived non-zero sequence read, a canary, and sixteen slots at 1 | Implemented |
+| `test_legacy_assumption_guard_admits_only_the_zero_key_alias` | Deploy the guard the EIP prescribes for pre-keyed verifier code and show it discriminates | A `VERIFY` frame enforcing `TXPARAM(0x0D) == 1 and TXPARAM(0x10) == 0`, run against `[0]`, `[7]` and `[1,2]` | `[0]` is admitted and its later frame writes the sentinel; `[7]` and `[1,2]` make the transaction invalid and the sentinel slot stays zero | Implemented |
 
 ## Notes on fixture formats and checklist rendering
 

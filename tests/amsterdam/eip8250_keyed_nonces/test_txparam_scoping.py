@@ -5,10 +5,12 @@ from execution_testing import (
     Account,
     Alloc,
     Bytecode,
+    Bytes,
     EIPChecklist,
     Environment,
     Frame,
     FrameReceipt,
+    FrameSignature,
     Op,
     StateTestFiller,
     Transaction,
@@ -126,6 +128,113 @@ def test_undefined_txparam_index_halts(
         tx=tx,
         post={
             probe: Account(storage=probe_storage),
+            Spec.NONCE_MANAGER: Account(
+                storage={
+                    Spec.nonce_slot(sender, nonce_key): 1
+                    for nonce_key in nonce_keys
+                }
+            ),
+        },
+    )
+
+
+@EIPChecklist.TransactionType.Test.TxScopedAttributes.Read()
+def test_inherited_signature_count_index_unchanged(
+    state_test: StateTestFiller,
+    pre: Alloc,
+) -> None:
+    """
+    Pin the other half of R-062: the four added indices are non-conflicting.
+
+    `test_undefined_txparam_index_halts` pins that the indices EIP-8250 does
+    not define stay undefined. R-062 also states that EIP-8141 assigns indices
+    through `0x0B`, including `0x0B = len(signatures)`, and that this EIP adds
+    its four indices without conflicting with them -- so `0x0B` must still
+    report the signature count after activation. That direction was asserted
+    nowhere; an earlier draft of this EIP placed `TXPARAM_NONCE_KEY_0` at
+    `0x0B`, which is exactly the collision this pins against.
+
+    The three values are chosen pairwise distinct so no arm can pass by
+    coincidence: two signatures, three nonce keys, and a first key of five.
+    Reading `0x0B`, `0x0D` and `0x10` into adjacent slots therefore fails if
+    any index returns another's value, returns zero, or halts. Every expected
+    value is counted off the transaction built below rather than recomputed
+    from a client, and the canary in the last slot proves the probe ran to
+    completion instead of the frame reverting into an all-zero account.
+    """
+    sender = pre.fund_eoa()
+    paymaster = pre.fund_eoa(amount=10**18)
+    nonce_keys = [5, 6, 9]
+    first_use_gas = Spec.KEYED_NONCE_FIRST_USE_GAS * len(nonce_keys)
+    signature_count = 2
+
+    probe = pre.deploy_contract(
+        code=(
+            Op.SSTORE(0, Op.TXPARAM(Spec.TXPARAM_SIGNATURE_COUNT))
+            + Op.SSTORE(1, Op.TXPARAM(Spec.TXPARAM_NONCE_KEY_COUNT))
+            + Op.SSTORE(2, Op.TXPARAM(Spec.TXPARAM_NONCE_KEY_0))
+            + Op.SSTORE(3, CANARY)
+            + Op.STOP
+        )
+    )
+
+    tx = Transaction(
+        sender=sender,
+        nonce_keys=nonce_keys,
+        nonce_seq=0,
+        frames=[
+            Frame(
+                mode=Spec.MODE_VERIFY,
+                flags=Spec.APPROVE_EXECUTION,
+                gas_limit=0,
+            ),
+            Frame(
+                mode=Spec.MODE_VERIFY,
+                flags=Spec.APPROVE_PAYMENT,
+                target=paymaster,
+                gas_limit=first_use_gas + 100_000,
+            ),
+            Frame(
+                mode=Spec.MODE_DEFAULT,
+                target=probe,
+                gas_limit=SCOPING_FRAME_GAS,
+            ),
+        ],
+        signatures=[
+            FrameSignature(
+                scheme=Spec.SCHEME_SECP256K1,
+                signer=Bytes(sender),
+            ),
+            FrameSignature(
+                scheme=Spec.SCHEME_SECP256K1,
+                signer=Bytes(paymaster),
+                secret_key=paymaster.key,
+            ),
+        ],
+        expected_receipt=TransactionReceipt(
+            payer=paymaster,
+            frame_receipts=[
+                FrameReceipt(status=Spec.STATUS_SUCCESS, gas_used=0),
+                FrameReceipt(status=Spec.STATUS_SUCCESS),
+                FrameReceipt(status=Spec.STATUS_SUCCESS),
+            ],
+        ),
+    )
+
+    state_test(
+        env=Environment(),
+        pre=pre,
+        tx=tx,
+        post={
+            sender: Account(nonce=0),
+            probe: Account(
+                storage={
+                    0: signature_count,
+                    1: len(nonce_keys),
+                    2: nonce_keys[0],
+                    3: CANARY,
+                }
+            ),
             Spec.NONCE_MANAGER: Account(
                 storage={
                     Spec.nonce_slot(sender, nonce_key): 1

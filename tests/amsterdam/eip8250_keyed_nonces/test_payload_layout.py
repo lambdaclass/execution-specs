@@ -144,8 +144,8 @@ def test_full_field_payload_layout_vector(
     pre: Alloc,
 ) -> None:
     """
-    Pin R-014 and R-016 against a transaction that defaults nothing it can
-    legally populate.
+    Pin R-014, R-015 and R-016 against a transaction that defaults nothing
+    it can legally populate.
 
     Eight of the ten payload fields, and every subfield of the frames inside
     them, carry a distinct value: two keys of different widths, an eight-byte

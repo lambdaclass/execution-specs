@@ -252,7 +252,7 @@ def test_canonical_encoding_accepted(
     pre: Alloc,
 ) -> None:
     """
-    Pin R-017 and R-018: the canonical ten-field envelope decodes.
+    Pin R-014, R-015 and R-017: the canonical ten-field envelope decodes.
 
     This is the accepted control for every rejection in this module. It also
     checks the hand-written encoder against the transaction's own
@@ -300,8 +300,8 @@ def test_non_canonical_integer_encoding_rejected(
     nonce_seq_item: bytes,
 ) -> None:
     """
-    Pin R-024: reject when any `nonce_keys` item or `nonce_seq` is not a
-    canonical RLP integer.
+    Pin R-017 and R-027: reject when any `nonce_keys` item or `nonce_seq`
+    is not a canonical RLP integer.
 
     The two defect shapes are hand-written from the RLP integer rules the EIP
     invokes. A leading zero byte makes `0x820001` a non-minimal encoding of
@@ -374,7 +374,7 @@ def test_integer_field_width_bounds(
     over_wide_seq_item: bytes | None,
 ) -> None:
     """
-    Pin R-025 and R-026: reject a `nonce_keys` item at or above `2**256` and
+    Pin R-028 and R-029: reject a `nonce_keys` item at or above `2**256` and
     a `nonce_seq` at or above `2**64`.
 
     Each rejected width is paired with the same field one byte narrower,
@@ -446,7 +446,7 @@ def test_nonce_keys_wrong_rlp_type_rejected(
     nonce_keys_item: bytes,
 ) -> None:
     """
-    Pin R-023: reject when `nonce_keys` is not an RLP list, and R-024 for an
+    Pin R-025: reject when `nonce_keys` is not an RLP list, and R-027 for an
     item that is a list rather than an integer.
 
     The first arm re-encodes the same single key as the byte string `0x8101`
@@ -498,7 +498,7 @@ def test_payload_field_count_mismatch_rejected(
     error: TransactionException,
 ) -> None:
     """
-    Pin R-022: reject a payload that does not match the EIP-8141 schema with
+    Pin R-024: reject a payload that does not match the EIP-8141 schema with
     `nonce` replaced by consecutive `nonce_keys` and `nonce_seq` fields.
 
     The schema has exactly ten fields. Dropping `nonce_seq` leaves nine, and
@@ -542,7 +542,7 @@ def test_envelope_byte_length_mismatch_rejected(
     error: TransactionException,
 ) -> None:
     """
-    Pin R-022 at the envelope level: the serialized transaction must be
+    Pin R-024 at the envelope level: the serialized transaction must be
     consumed exactly.
 
     Removing the final byte leaves the outer list header promising one more
