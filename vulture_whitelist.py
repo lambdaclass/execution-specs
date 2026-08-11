@@ -126,6 +126,8 @@ TransactionLoad.json_to_blob_versioned_hashes
 TransactionLoad.json_to_sender
 TransactionLoad.json_to_frames
 TransactionLoad.json_to_signatures
+TransactionLoad.json_to_nonce_keys
+TransactionLoad.json_to_nonce_seq
 TransactionLoad.json_to_v
 TransactionLoad.json_to_y_parity
 TransactionLoad.json_to_r
