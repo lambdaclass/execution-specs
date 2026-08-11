@@ -16,6 +16,7 @@ from ...fork_types import ExecutionGas
 from ...transactions.frame_transaction import (
     APPROVE_SCOPE_MASK,
     FrameFlag,
+    FrameMode,
     FrameSignatureScheme,
     resolve_frame_target,
 )
@@ -49,7 +50,8 @@ def approve(evm: Evm) -> None:
     the frame's allowed flags, or a failed precondition — reverts the
     frame instead. The approval's writes deliberately bypass the
     `VERIFY` static restriction: only `APPROVE` may mutate state
-    there.
+    there. A `POST_TX` frame has no valid reason to approve, and
+    executing `APPROVE` inside one exceptionally halts.
     """
     # STACK
     offset = pop(evm.stack)
@@ -65,6 +67,9 @@ def approve(evm: Evm) -> None:
     tx = frame_context.tx
     frame = tx.frames[int(frame_context.current_frame_index)]
     resolved_target = resolve_frame_target(tx, frame)
+
+    if frame.mode == FrameMode.POST_TX:
+        raise InvalidParameter("approval inside a post-transaction frame")
 
     evm.memory += b"\x00" * extend_memory.expand_by
 

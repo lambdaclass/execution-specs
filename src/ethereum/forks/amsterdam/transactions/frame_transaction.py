@@ -126,6 +126,20 @@ class FrameMode(UintEnum, boundary=STRICT):
     [s]: ref:ethereum.forks.amsterdam.transactions.frame_transaction.FrameTransaction.sender
     """  # noqa: E501
 
+    POST_TX = Uint(3)
+    """
+    Identify frame as a post-transaction assertion, introduced in
+    [EIP-7906].
+
+    Executed as a `STATICCALL` from [`FRAME_ENTRY_POINT`][fep] after
+    the whole execution body, with access to the transaction's state
+    diff. A failing `POST_TX` frame reverts the entire execution body
+    while keeping the transaction valid.
+
+    [EIP-7906]: https://eips.ethereum.org/EIPS/eip-7906
+    [fep]: ref:ethereum.forks.amsterdam.vm.FRAME_ENTRY_POINT
+    """
+
 
 @final
 class FrameFlag(UintFlag, boundary=STRICT):
@@ -196,8 +210,9 @@ class FrameStatus(UintEnum):
 
     SKIPPED = Uint(2)
     """
-    The frame never executed because an earlier frame of its atomic
-    batch failed.
+    The frame never executed: an earlier frame of its atomic batch
+    failed, or an earlier post-transaction frame reverted the
+    execution body.
     """
 
 
@@ -576,6 +591,12 @@ def validate_frame_transaction(
     nonce and fee-cap upper bounds, which are tighter than the decoded
     types enforce, and the constraints that span several fields.
 
+    `POST_TX` frames must form a contiguous trailing suffix of the
+    frame list, and may be neither members nor terminators of an
+    atomic batch: a batch reaching into the suffix could skip an
+    assertion frame while keeping the batch's preceding state changes
+    committed.
+
     A frame transaction has no gas limit field; its two gas anchors are
     derived instead, and the inclusion-facing `max_gas` must not exceed
     the per-transaction gas cap of [EIP-7825].
@@ -625,6 +646,7 @@ def validate_frame_transaction(
     )
 
     has_expiry_verifier_frame = False
+    has_post_transaction_frame = False
     total_frame_gas = Uint(0)
     for index, frame in enumerate(tx.frames):
         total_frame_gas += Uint(frame.gas)
@@ -633,6 +655,13 @@ def validate_frame_transaction(
 
         if frame.mode != FrameMode.SENDER and frame.value != U256(0):
             raise InvalidFrameError("only sender frames can transfer value")
+
+        if frame.mode == FrameMode.POST_TX:
+            has_post_transaction_frame = True
+        elif has_post_transaction_frame:
+            raise InvalidFrameError(
+                "post-transaction frames must form a trailing suffix"
+            )
 
         if FrameFlag.APPROVE_EXECUTION in frame.flags:
             if isinstance(frame.to, Address) and frame.to != tx.sender:
@@ -645,11 +674,19 @@ def validate_frame_transaction(
                 raise InvalidFrameError(
                     "atomic batches cannot contain verify frames"
                 )
+            if frame.mode == FrameMode.POST_TX:
+                raise InvalidFrameError(
+                    "atomic batches cannot contain post-transaction frames"
+                )
             if index + 1 >= len(tx.frames):
                 raise InvalidFrameError("last frame cannot have atomic flag")
             if tx.frames[index + 1].mode == FrameMode.VERIFY:
                 raise InvalidFrameError(
                     "atomic batches cannot contain verify frames"
+                )
+            if tx.frames[index + 1].mode == FrameMode.POST_TX:
+                raise InvalidFrameError(
+                    "atomic batches cannot contain post-transaction frames"
                 )
 
         if frame.mode == FrameMode.VERIFY and frame.to == EXPIRY_VERIFIER:

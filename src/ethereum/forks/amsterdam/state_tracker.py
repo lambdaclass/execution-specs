@@ -300,6 +300,34 @@ def get_storage_original(
     return tx_state.parent.pre_state.get_storage(address, key)
 
 
+def get_pre_state_storage(
+    tx_state: TransactionState, address: Address, key: Bytes32
+) -> U256:
+    """
+    Get the value of a storage slot as it was before the current
+    transaction began, recording the read.
+
+    Like [`get_storage_original`], but the read appears in the
+    transaction's storage reads — for pre-transaction values the
+    protocol prices and records as live state access, such as the
+    `TXDIFF` slot lookups.
+
+    [`get_storage_original`]: ref:ethereum.forks.amsterdam.state_tracker.get_storage_original
+
+    Parameters
+    ----------
+    tx_state :
+        The transaction state.
+    address :
+        Address of the account to read the value from.
+    key :
+        Key of the storage slot.
+
+    """  # noqa: E501
+    tx_state.storage_reads.add((address, key))
+    return get_storage_original(tx_state, address, key)
+
+
 def get_transient_storage(
     tx_state: TransactionState, address: Address, key: Bytes32
 ) -> U256:
@@ -737,6 +765,215 @@ def set_code(
         sender.code_hash = code_hash
 
     modify_state(tx_state, address, write_code_hash)
+
+
+# -- Transaction State Diff --------------------------------------------------
+
+
+@final
+@dataclass
+class BalanceChange:
+    """
+    Net balance change of one account between the transaction prestate
+    and the current transaction state.
+    """
+
+    address: Address
+    """
+    Account whose balance changed.
+    """
+
+    balance_before: U256
+    """
+    Balance at the start of the transaction.
+    """
+
+    balance_after: U256
+    """
+    Balance in the current transaction state.
+    """
+
+
+@final
+@dataclass
+class StorageChange:
+    """
+    Net change of one storage slot between the transaction prestate
+    and the current transaction state.
+    """
+
+    address: Address
+    """
+    Account whose storage slot changed.
+    """
+
+    key: Bytes32
+    """
+    Key of the storage slot that changed.
+    """
+
+    value_before: U256
+    """
+    Value of the slot at the start of the transaction.
+    """
+
+    value_after: U256
+    """
+    Value of the slot in the current transaction state.
+    """
+
+
+@final
+@dataclass
+class DeployedContract:
+    """
+    Contract whose code was deployed during the current transaction.
+    """
+
+    address: Address
+    """
+    Address of the newly deployed contract.
+    """
+
+    code_hash_after: Hash32
+    """
+    Code hash of the newly deployed contract.
+    """
+
+
+def transaction_balance_changes(
+    tx_state: TransactionState,
+) -> Tuple[BalanceChange, ...]:
+    """
+    Return the collapsed balance diff of the current transaction:
+    every account whose balance in the current transaction state
+    differs from its transaction prestate value, ascending by address.
+
+    Intermediary writes are collapsed away — an account whose balance
+    was changed and later restored does not appear. The gas payment
+    escrowed from the payer on approval is a balance change like any
+    other. Every account considered is one the transaction already
+    wrote, so building the diff records no new state accesses.
+    """
+    changes = []
+    for address in sorted(tx_state.account_writes):
+        balance_before = get_pre_state_account(tx_state, address).balance
+        account = tx_state.account_writes[address]
+        balance_after = U256(0) if account is None else account.balance
+        if balance_before != balance_after:
+            changes.append(
+                BalanceChange(
+                    address=address,
+                    balance_before=balance_before,
+                    balance_after=balance_after,
+                )
+            )
+    return tuple(changes)
+
+
+def transaction_storage_changes(
+    tx_state: TransactionState,
+) -> Tuple[StorageChange, ...]:
+    """
+    Return the collapsed storage diff of the current transaction:
+    every storage slot whose value in the current transaction state
+    differs from its transaction prestate value, ascending by address
+    and then by slot key.
+
+    Intermediary writes are collapsed away — a slot that was written
+    and later restored to its original value does not appear. Every
+    slot considered is one the transaction already wrote, so building
+    the diff records no new state accesses.
+    """
+    changes = []
+    for address in sorted(tx_state.storage_writes):
+        slots = tx_state.storage_writes[address]
+        for key in sorted(slots):
+            value_before = get_storage_original(tx_state, address, key)
+            value_after = slots[key]
+            if value_before != value_after:
+                changes.append(
+                    StorageChange(
+                        address=address,
+                        key=key,
+                        value_before=value_before,
+                        value_after=value_after,
+                    )
+                )
+    return tuple(changes)
+
+
+def transaction_deployed_contracts(
+    tx_state: TransactionState,
+) -> Tuple[DeployedContract, ...]:
+    """
+    Return every account whose code hash changed during the current
+    transaction from the empty-code hash to a non-empty code hash that
+    is not an [EIP-7702] delegation designation, ascending by address.
+
+    An account that a creation leaves with empty code has no code
+    change and is not enumerated. An account deleted at the end of the
+    transaction still counts while the transaction executes, since its
+    code is present in the current transaction state.
+
+    [EIP-7702]: https://eips.ethereum.org/EIPS/eip-7702
+    """
+    from .vm.eoa_delegation import is_valid_delegation
+
+    deployed = []
+    for address in sorted(tx_state.account_writes):
+        account = tx_state.account_writes[address]
+        if account is None or account.code_hash == EMPTY_CODE_HASH:
+            continue
+        code_hash_before = get_pre_state_account(tx_state, address).code_hash
+        if code_hash_before != EMPTY_CODE_HASH:
+            continue
+        if is_valid_delegation(get_code(tx_state, account.code_hash)):
+            continue
+        deployed.append(
+            DeployedContract(
+                address=address, code_hash_after=account.code_hash
+            )
+        )
+    return tuple(deployed)
+
+
+def transaction_account_change_flags(
+    tx_state: TransactionState, address: Address
+) -> Uint:
+    """
+    Return the bitmask summarizing every net change to an account
+    between the transaction prestate and the current transaction
+    state, in the field order of the account tuple: bit 0 for the
+    nonce, bit 1 for the balance, bit 2 for any storage slot, and
+    bit 3 for the code hash. All higher bits are zero.
+
+    Each bit reflects a net difference — values modified and later
+    restored set no bit — so the mask is zero if and only if the
+    account, including its entire storage, is identical to the
+    transaction prestate. The answer comes entirely from the
+    transaction's own writes: an account the transaction never wrote
+    reports zero without reading the live state.
+    """
+    flags = Uint(0)
+
+    if address in tx_state.account_writes:
+        before = get_pre_state_account(tx_state, address)
+        account = tx_state.account_writes[address]
+        after = EMPTY_ACCOUNT if account is None else account
+        if after.nonce != before.nonce:
+            flags |= Uint(1)
+        if after.balance != before.balance:
+            flags |= Uint(2)
+        if after.code_hash != before.code_hash:
+            flags |= Uint(8)
+
+    for key, value in tx_state.storage_writes.get(address, {}).items():
+        if value != get_storage_original(tx_state, address, key):
+            flags |= Uint(4)
+            break
+
+    return flags
 
 
 # -- Snapshot / Rollback ---------------------------------------------------

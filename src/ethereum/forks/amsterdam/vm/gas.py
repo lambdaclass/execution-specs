@@ -288,9 +288,19 @@ class GasCosts:
     OPCODE_FRAMEPARAM: Final[ExecutionGas] = BASE
     OPCODE_SIGPARAM: Final[ExecutionGas] = BASE
 
+    OPCODE_TXTRACE: Final[ExecutionGas] = ExecutionGas(Uint(100))
+    """
+    Cost of `TXTRACE`, and of the `TXDIFF` parameters answered
+    entirely from the transaction-local state diff. EIP-7906 names
+    this constant `TXTRACE_GAS_COST` and leaves its value to be
+    determined; the value chosen here matches `WARM_ACCESS`, pricing
+    reads of transaction-local data the client already holds.
+    """
+
     # Dynamic Opcode Components
     OPCODE_FRAMEDATACOPY_BASE: Final[ExecutionGas] = VERY_LOW
     OPCODE_SIGPARAM_COPY_BASE: Final[ExecutionGas] = VERY_LOW
+    OPCODE_EVENTDATACOPY_BASE: Final[ExecutionGas] = VERY_LOW
     OPCODE_RETURNDATACOPY_BASE: Final[ExecutionGas] = VERY_LOW
     OPCODE_RETURNDATACOPY_PER_WORD: Final[ExecutionGas] = ExecutionGas(Uint(3))
     OPCODE_CALLDATACOPY_BASE: Final[ExecutionGas] = VERY_LOW

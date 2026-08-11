@@ -328,7 +328,10 @@ FRAME_CASES = [
     # Decode-time rejections: field values outside their type's
     # domain never construct, so the transaction never decodes.
     pytest.param(
-        [verify_frame(), default_frame(mode=3)],
+        # Mode 3 is EIP-7906's POST_TX mode, so 4 is the first value this
+        # fork leaves undefined. Like the undefined TXPARAM selector, which
+        # value is free depends on the fork rather than on EIP-8141 alone.
+        [verify_frame(), default_frame(mode=4)],
         TransactionException.TYPE_6_INVALID_FRAME_FORMAT,
         id="undefined_frame_mode",
         marks=pytest.mark.exception_test,

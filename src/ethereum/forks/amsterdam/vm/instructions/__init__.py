@@ -26,6 +26,7 @@ from . import keccak as keccak_instructions
 from . import log as log_instructions
 from . import memory as memory_instructions
 from . import stack as stack_instructions
+from . import state_diff as state_diff_instructions
 from . import storage as storage_instructions
 from . import system as system_instructions
 
@@ -217,6 +218,11 @@ class Ops(enum.Enum):
     FRAMEPARAM = 0xB3
     SIGPARAM = 0xB4
 
+    # Transaction State Diff Operations
+    TXTRACE = 0xB5
+    EVENTDATACOPY = 0xB6
+    TXDIFF = 0xB7
+
     # System Operations
     CREATE = 0xF0
     CALL = 0xF1
@@ -380,6 +386,9 @@ op_implementation: Dict[Ops, Callable] = {
     Ops.FRAMEDATACOPY: frame_instructions.framedatacopy,
     Ops.FRAMEPARAM: frame_instructions.frameparam,
     Ops.SIGPARAM: frame_instructions.sigparam,
+    Ops.TXTRACE: state_diff_instructions.txtrace,
+    Ops.EVENTDATACOPY: state_diff_instructions.eventdatacopy,
+    Ops.TXDIFF: state_diff_instructions.txdiff,
     Ops.CREATE: system_instructions.create,
     Ops.RETURN: system_instructions.return_,
     Ops.CALL: system_instructions.call,

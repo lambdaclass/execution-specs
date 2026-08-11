@@ -6156,6 +6156,112 @@ class Opcodes(Opcode, Enum):
     Gas: 2 (params 0x00-0x03)
     """
 
+    # EIP-7906 Transaction State Diff Opcodes
+
+    TXTRACE = Opcode(
+        0xB5,
+        popped_stack_items=2,
+        pushed_stack_items=1,
+        kwargs=["index", "param"],
+    )
+    """
+    TXTRACE(index, param)
+    ----
+
+    Description
+    ----
+    Push one parameter of the transaction's collapsed state diff
+    (entry counts, balance/storage/deployment entries, events, gas
+    pre-charge, gas payer) inside an EIP-7906 POST_TX frame. Executing
+    it in any other context is an exceptional halt.
+
+    Inputs
+    ----
+    - index: entry index for indexed params; must be 0 for scalar params
+    - param: parameter selector (0x00-0x15)
+
+    Outputs
+    ----
+    - value: the requested state diff parameter
+
+    Fork
+    ----
+    Amsterdam
+
+    Gas: 100
+    """
+
+    EVENTDATACOPY = Opcode(
+        0xB6,
+        popped_stack_items=4,
+        pushed_stack_items=0,
+        kwargs=["event_index", "dest_offset", "offset", "size"],
+    )
+    """
+    EVENTDATACOPY(event_index, dest_offset, offset, size)
+    ----
+
+    Description
+    ----
+    Copy the chosen event's non-indexed data into memory inside an
+    EIP-7906 POST_TX frame. Unlike CALLDATACOPY, reading past the end
+    of the event's data is an exceptional halt rather than a zero
+    fill, as is an out-of-bounds event index or any other context.
+
+    Inputs
+    ----
+    - event_index: global index of the event
+    - dest_offset: byte offset in memory to copy to
+    - offset: byte offset in the event data to copy from
+    - size: number of bytes to copy
+
+    Outputs
+    ----
+    None
+
+    Fork
+    ----
+    Amsterdam
+
+    Gas: 3 + 3 * ceil(size / 32) (plus memory expansion)
+    """
+
+    TXDIFF = Opcode(
+        0xB7,
+        popped_stack_items=3,
+        pushed_stack_items=1,
+        kwargs=["in3", "address", "param"],
+    )
+    """
+    TXDIFF(in3, address, param)
+    ----
+
+    Description
+    ----
+    Push one keyed lookup into the transaction's state diff (slot,
+    balance, or codehash values before/after, per-address views over
+    slots and events, account change flags) inside an EIP-7906
+    POST_TX frame. Executing it in any other context is an
+    exceptional halt.
+
+    Inputs
+    ----
+    - in3: slot key (params 0x00-0x01), local view index (0x07, 0x09),
+      or 0 for the remaining params
+    - address: the queried account
+    - param: parameter selector (0x00-0x0A)
+
+    Outputs
+    ----
+    - value: the requested state diff lookup
+
+    Fork
+    ----
+    Amsterdam
+
+    Gas: warm/cold access cost (params 0x00-0x05); 100 (0x06-0x0A)
+    """
+
 
 _push_opcodes_byte_list: List[Opcode] = [
     Opcodes.PUSH1,
