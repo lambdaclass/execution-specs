@@ -107,7 +107,6 @@ pytestmark = pytest.mark.valid_from("Bogota")
         # Components inside their ranges but no longer matching the
         # signed digest pass the range check and fail recovery with a
         # mismatched signer.
-
         pytest.param(
             "s",
             SECP256K1N // 2,
@@ -136,6 +135,7 @@ def test_signature_component_edges(
     comparison widths of the component bounds.
     """
     sender = pre.fund_eoa()
+    assert sender.key is not None
     entry = with_tampered_components(
         signed_digest_entry(sender.key), **{component: value}
     )

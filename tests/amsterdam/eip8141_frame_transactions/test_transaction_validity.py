@@ -109,13 +109,12 @@ def test_nonce_and_signature_both_invalid(
     untouched.
     """
     sender = pre.fund_eoa()
+    assert sender.key is not None
     target = pre.deploy_contract(code=Op.SSTORE(SLOT_EXECUTED, 1) + Op.STOP)
     # A structurally well-formed entry whose r component is out of
     # range, appended after the canonical entry the default code
     # consumes.
-    bad_entry = with_tampered_components(
-        signed_digest_entry(sender.key), r=0
-    )
+    bad_entry = with_tampered_components(signed_digest_entry(sender.key), r=0)
 
     tx = Transaction(
         sender=sender,

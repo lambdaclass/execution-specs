@@ -43,6 +43,7 @@ PROBE_FRAME_GAS = 500_000
 """Gas limit of frames whose code writes storage, leaving room for
 the state gas of fresh writes under EIP-8037."""
 
+
 def excess_for_priced_blobs(fork: Fork) -> int:
     """
     Return an excess blob gas that pushes the blob base fee to at
@@ -55,6 +56,7 @@ def excess_for_priced_blobs(fork: Fork) -> int:
     while price_of(excess_blob_gas=excess) < 10:
         excess += step
     return excess
+
 
 BASE_FEE = 7
 PRIORITY_FEE = 0
@@ -171,9 +173,7 @@ def test_blob_fee_settlement(
     sender = pre.deploy_contract(code=APPROVE_ALL_CODE, balance=FUNDS)
     gas_costs = fork.gas_costs()
 
-    verify_gas_used = (
-        gas_costs.WARM_ACCESS + APPROVE_ALL_CODE.gas_cost(fork)
-    )
+    verify_gas_used = gas_costs.WARM_ACCESS + APPROVE_ALL_CODE.gas_cost(fork)
     gas_used = (
         Spec.FRAME_TX_INTRINSIC_COST
         + Spec.FRAME_TX_PER_FRAME_COST
@@ -228,9 +228,7 @@ def test_blobhash_across_frames(
         code=Op.SSTORE(slot, Op.BLOBHASH(0))
         + Op.SSTORE(Op.ADD(slot, 1), Op.BLOBHASH(1))
         + Op.SSTORE(Op.ADD(slot, 2), Op.ADD(Op.BLOBHASH(2), 1))
-        + Op.SSTORE(
-            Op.ADD(slot, 3), Op.TXPARAM(Spec.TXPARAM_BLOB_COUNT)
-        )
+        + Op.SSTORE(Op.ADD(slot, 3), Op.TXPARAM(Spec.TXPARAM_BLOB_COUNT))
         + Op.STOP
     )
 

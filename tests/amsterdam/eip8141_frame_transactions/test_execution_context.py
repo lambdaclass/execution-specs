@@ -179,9 +179,7 @@ def test_origin_in_non_frame_transaction(
         pre=pre,
         tx=tx,
         post={
-            probe: Account(
-                storage={SLOT_CALLER: sender, SLOT_ORIGIN: sender}
-            ),
+            probe: Account(storage={SLOT_CALLER: sender, SLOT_ORIGIN: sender}),
         },
     )
 

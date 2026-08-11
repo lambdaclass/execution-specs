@@ -12,8 +12,8 @@ from typing import List, TypeAlias, Union
 
 import pytest
 from execution_testing import (
-    EOA,
     Account,
+    Address,
     Alloc,
     Bytecode,
     Bytes,
@@ -254,9 +254,7 @@ def test_framedataload_future_frame_and_max_offset(
     """
     sender = pre.fund_eoa()
     probe = pre.deploy_contract(
-        code=Op.SSTORE(
-            SLOT_RESULT, Op.ADD(Op.FRAMEDATALOAD(offset, 2), 1)
-        )
+        code=Op.SSTORE(SLOT_RESULT, Op.ADD(Op.FRAMEDATALOAD(offset, 2), 1))
         + Op.STOP
     )
 
@@ -393,14 +391,10 @@ def test_introspection_in_initcode(
     """
     sender = pre.fund_eoa()
     initcode = (
-        Op.SSTORE(
-            SLOT_RESULT, Op.ADD(Op.TXPARAM(Spec.TXPARAM_FRAME_INDEX), 1)
-        )
+        Op.SSTORE(SLOT_RESULT, Op.ADD(Op.TXPARAM(Spec.TXPARAM_FRAME_INDEX), 1))
         + Op.STOP
     )
-    initcode_word = int.from_bytes(
-        bytes(initcode).ljust(32, b"\x00"), "big"
-    )
+    initcode_word = int.from_bytes(bytes(initcode).ljust(32, b"\x00"), "big")
     dispatcher = pre.deploy_contract(
         code=Op.MSTORE(0, initcode_word)
         + Op.POP(Op.CREATE(0, 0, len(initcode)))
@@ -491,16 +485,12 @@ def rlp_encode(item: RlpItem) -> bytes:
     def length_prefix(length: int, offset: int) -> bytes:
         if length < 56:
             return bytes([offset + length])
-        length_bytes = length.to_bytes(
-            (length.bit_length() + 7) // 8, "big"
-        )
+        length_bytes = length.to_bytes((length.bit_length() + 7) // 8, "big")
         return bytes([offset + 55 + len(length_bytes)]) + length_bytes
 
     if isinstance(item, int):
         as_bytes = (
-            item.to_bytes((item.bit_length() + 7) // 8, "big")
-            if item
-            else b""
+            item.to_bytes((item.bit_length() + 7) // 8, "big") if item else b""
         )
         return rlp_encode(as_bytes)
     if isinstance(item, bytes):
@@ -512,9 +502,9 @@ def rlp_encode(item: RlpItem) -> bytes:
 
 
 def hand_computed_signature_hash(
-    sender: EOA,
+    sender: Address,
     frames: List[Frame],
-    signature_fields: List[List[RlpItem]],
+    signature_fields: List[RlpItem],
     max_priority_fee: int,
     max_fee: int,
 ) -> bytes:
@@ -548,9 +538,7 @@ def hand_computed_signature_hash(
         0,  # max fee per blob gas
         [],  # blob versioned hashes
     ]
-    return keccak256(
-        bytes([Spec.FRAME_TX_TYPE]) + rlp_encode(payload)
-    )
+    return keccak256(bytes([Spec.FRAME_TX_TYPE]) + rlp_encode(payload))
 
 
 def test_sig_hash_pinned(
@@ -612,9 +600,7 @@ def test_sig_hash_pinned(
         tx=tx,
         post={
             probe: Account(
-                storage={
-                    SLOT_RESULT: int.from_bytes(expected_hash, "big")
-                }
+                storage={SLOT_RESULT: int.from_bytes(expected_hash, "big")}
             ),
         },
     )
@@ -674,9 +660,9 @@ def test_sig_hash_elides_empty_msg_bytes(
         PRIORITY_FEE,
         MAX_FEE,
     )
-    raw = PrivateKey(
-        EMBEDDED_SIGNER_KEY.to_bytes(32, "big")
-    ).sign_recoverable(elided_hash)
+    raw = PrivateKey(EMBEDDED_SIGNER_KEY.to_bytes(32, "big")).sign_recoverable(
+        elided_hash
+    )
     signed_entry = FrameSignature(
         scheme=Spec.SCHEME_SECP256K1,
         signer=Bytes(EMBEDDED_SIGNER),

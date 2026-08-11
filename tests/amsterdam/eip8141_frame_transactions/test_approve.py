@@ -104,17 +104,14 @@ def scope_probing_sender_code(canonical_scope: int) -> Bytecode:
     reverts the frame and discards the marker.
     """
     return branched_sender_code(
-        Op.SSTORE(SLOT_MARKER, MARKER)
-        + Op.APPROVE(0, 0, Op.CALLDATALOAD(0)),
+        Op.SSTORE(SLOT_MARKER, MARKER) + Op.APPROVE(0, 0, Op.CALLDATALOAD(0)),
         canonical_scope,
     )
 
 
 def canary_contract(pre: Alloc) -> Address:
     """Deploy a contract recording its execution in a storage marker."""
-    return pre.deploy_contract(
-        code=Op.SSTORE(SLOT_EXECUTED, MARKER) + Op.STOP
-    )
+    return pre.deploy_contract(code=Op.SSTORE(SLOT_EXECUTED, MARKER) + Op.STOP)
 
 
 @pytest.mark.exception_test
@@ -206,9 +203,7 @@ def test_payment_before_execution_approval(
 @pytest.mark.parametrize(
     "frame_flags,probe_scope",
     [
-        pytest.param(
-            Spec.APPROVE_EXECUTION_AND_PAYMENT, 0, id="zero_scope"
-        ),
+        pytest.param(Spec.APPROVE_EXECUTION_AND_PAYMENT, 0, id="zero_scope"),
         pytest.param(
             Spec.APPROVE_EXECUTION_AND_PAYMENT, 4, id="batch_bit_scope"
         ),
@@ -497,9 +492,7 @@ def test_approve_from_child_call_reverts_callee(
         + Op.STOP
     )
     sender = pre.deploy_contract(
-        code=branched_sender_code(
-            probe, Spec.APPROVE_EXECUTION_AND_PAYMENT
-        ),
+        code=branched_sender_code(probe, Spec.APPROVE_EXECUTION_AND_PAYMENT),
         balance=10**18,
     )
     canary = canary_contract(pre)
@@ -556,9 +549,7 @@ def test_approve_from_delegatecall(
         + Op.STOP
     )
     sender = pre.deploy_contract(
-        code=branched_sender_code(
-            probe, Spec.APPROVE_EXECUTION_AND_PAYMENT
-        ),
+        code=branched_sender_code(probe, Spec.APPROVE_EXECUTION_AND_PAYMENT),
         balance=10**18,
     )
     canary = canary_contract(pre)
@@ -606,9 +597,7 @@ def test_approve_in_initcode_reverts_create(
     one, and the canonical approval afterwards still succeeds.
     """
     initcode = Op.APPROVE(0, 0, Spec.APPROVE_EXECUTION_AND_PAYMENT)
-    initcode_word = int.from_bytes(
-        bytes(initcode).ljust(32, b"\x00"), "big"
-    )
+    initcode_word = int.from_bytes(bytes(initcode).ljust(32, b"\x00"), "big")
     probe = (
         Op.MSTORE(0, initcode_word)
         + Op.SSTORE(
@@ -618,9 +607,7 @@ def test_approve_in_initcode_reverts_create(
         + Op.STOP
     )
     sender = pre.deploy_contract(
-        code=branched_sender_code(
-            probe, Spec.APPROVE_EXECUTION_AND_PAYMENT
-        ),
+        code=branched_sender_code(probe, Spec.APPROVE_EXECUTION_AND_PAYMENT),
         balance=10**18,
     )
     canary = canary_contract(pre)
@@ -735,8 +722,7 @@ def test_approve_memory_expansion_gas(
             marks=pytest.mark.exception_test,
         ),
         pytest.param(
-            Op.POP(Op.CALL(Op.GAS, Address(0x1234), 1, 0, 0, 0, 0))
-            + Op.STOP,
+            Op.POP(Op.CALL(Op.GAS, Address(0x1234), 1, 0, 0, 0, 0)) + Op.STOP,
             TransactionException.TYPE_6_INVALID_FRAME_EXECUTION,
             id="call_with_value",
             marks=pytest.mark.exception_test,
@@ -902,9 +888,7 @@ def test_payment_balance_boundary(
         max_priority_fee_per_gas=0,
         frames=frames,
         error=error,
-        expected_receipt=None
-        if error
-        else TransactionReceipt(payer=payer),
+        expected_receipt=None if error else TransactionReceipt(payer=payer),
     )
 
     post = {sender: Account(nonce=1 if error else 2)}

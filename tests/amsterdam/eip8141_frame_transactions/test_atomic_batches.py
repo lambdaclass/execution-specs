@@ -199,9 +199,7 @@ def test_atomic_batch_unwinds_warmth(
     """
     sender = pre.fund_eoa()
     subject = pre.fund_eoa(amount=1)
-    toucher = pre.deploy_contract(
-        code=Op.POP(Op.BALANCE(subject)) + Op.STOP
-    )
+    toucher = pre.deploy_contract(code=Op.POP(Op.BALANCE(subject)) + Op.STOP)
     reverter = pre.deploy_contract(code=Op.REVERT(0, 0))
     cold_access = Op.BALANCE(address_warm=False).gas_cost(fork)
     measured = Op.BALANCE(address=subject, address_warm=False)

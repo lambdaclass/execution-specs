@@ -90,9 +90,7 @@ def tokens_in(data: bytes) -> int:
 
 def entry_data_bytes(entry: FrameSignature) -> bytes:
     """Concatenate the calldata-priced byte fields of an entry."""
-    return (
-        bytes(entry.signer) + bytes(entry.msg) + bytes(entry.signature)
-    )
+    return bytes(entry.signer) + bytes(entry.msg) + bytes(entry.signature)
 
 
 def gas_anchors(
@@ -160,11 +158,9 @@ def test_exact_gas_accounting_standard(
     intrinsic_execution, calldata_floor = gas_anchors(
         fork, [b"", worker_data], [], SCHEME_GAS
     )
-    verify_gas_used = (
-        gas_costs.WARM_ACCESS + APPROVE_ALL_CODE.gas_cost(fork)
-    )
-    worker_gas_used = (
-        gas_costs.COLD_ACCOUNT_ACCESS + worker_code.gas_cost(fork)
+    verify_gas_used = gas_costs.WARM_ACCESS + APPROVE_ALL_CODE.gas_cost(fork)
+    worker_gas_used = gas_costs.COLD_ACCOUNT_ACCESS + worker_code.gas_cost(
+        fork
     )
     gas_used = intrinsic_execution + verify_gas_used + worker_gas_used
     assert calldata_floor < gas_used, "arm must be standard-dominant"
@@ -231,9 +227,7 @@ def test_exact_gas_accounting_floor_dominant(
     intrinsic_execution, calldata_floor = gas_anchors(
         fork, [zero_data], [], SCHEME_GAS
     )
-    verify_gas_used = (
-        gas_costs.WARM_ACCESS + APPROVE_ALL_CODE.gas_cost(fork)
-    )
+    verify_gas_used = gas_costs.WARM_ACCESS + APPROVE_ALL_CODE.gas_cost(fork)
     assert calldata_floor > intrinsic_execution + verify_gas_used, (
         "arm must be floor-dominant"
     )
@@ -336,12 +330,8 @@ def test_signature_gas_constants(
     intrinsic_execution, calldata_floor = gas_anchors(
         fork, [b""], entries, SCHEME_GAS
     )
-    verify_gas_used = (
-        gas_costs.WARM_ACCESS + APPROVE_ALL_CODE.gas_cost(fork)
-    )
-    gas_used = max(
-        intrinsic_execution + verify_gas_used, calldata_floor
-    )
+    verify_gas_used = gas_costs.WARM_ACCESS + APPROVE_ALL_CODE.gas_cost(fork)
+    gas_used = max(intrinsic_execution + verify_gas_used, calldata_floor)
 
     tx = Transaction(
         sender=sender,
@@ -392,9 +382,7 @@ def test_frame_oog_isolation(
     gas_costs = fork.gas_costs()
 
     exact = gas_costs.COLD_ACCOUNT_ACCESS + worker_code.gas_cost(fork)
-    verify_gas_used = (
-        gas_costs.WARM_ACCESS + APPROVE_ALL_CODE.gas_cost(fork)
-    )
+    verify_gas_used = gas_costs.WARM_ACCESS + APPROVE_ALL_CODE.gas_cost(fork)
     intrinsic_execution, _ = gas_anchors(fork, [b"", b""], [], SCHEME_GAS)
     # An out-of-gas frame forfeits exactly its limit.
     worker_gas_used = exact - gas_shortfall
@@ -456,15 +444,11 @@ def test_skipped_frame_gas_refund(
     sender = pre.deploy_contract(code=APPROVE_ALL_CODE, balance=FUNDS)
     gas_costs = fork.gas_costs()
 
-    verify_gas_used = (
-        gas_costs.WARM_ACCESS + APPROVE_ALL_CODE.gas_cost(fork)
+    verify_gas_used = gas_costs.WARM_ACCESS + APPROVE_ALL_CODE.gas_cost(fork)
+    reverter_gas_used = gas_costs.COLD_ACCOUNT_ACCESS + reverter_code.gas_cost(
+        fork
     )
-    reverter_gas_used = (
-        gas_costs.COLD_ACCOUNT_ACCESS + reverter_code.gas_cost(fork)
-    )
-    intrinsic_execution, _ = gas_anchors(
-        fork, [b"", b"", b""], [], SCHEME_GAS
-    )
+    intrinsic_execution, _ = gas_anchors(fork, [b"", b"", b""], [], SCHEME_GAS)
     gas_used = intrinsic_execution + verify_gas_used + reverter_gas_used
 
     tx = Transaction(
@@ -479,9 +463,7 @@ def test_skipped_frame_gas_refund(
                 target=reverter,
                 gas_limit=100_000,
             ),
-            default_frame(
-                target=skipped_target, gas_limit=SKIPPED_FRAME_GAS
-            ),
+            default_frame(target=skipped_target, gas_limit=SKIPPED_FRAME_GAS),
         ],
         expected_receipt=TransactionReceipt(
             cumulative_gas_used=gas_used,
@@ -570,25 +552,17 @@ def test_refund_accounting(
         new_value=0,
     )
     clearer_code = clear_code + Op.STOP
-    clearer = pre.deploy_contract(
-        code=clearer_code, storage={SLOT_CLEARED: 1}
-    )
+    clearer = pre.deploy_contract(code=clearer_code, storage={SLOT_CLEARED: 1})
     sender = pre.deploy_contract(code=APPROVE_ALL_CODE, balance=FUNDS)
     gas_costs = fork.gas_costs()
 
     refund = clear_code.refund(fork)
-    verify_gas_used = (
-        gas_costs.WARM_ACCESS + APPROVE_ALL_CODE.gas_cost(fork)
+    verify_gas_used = gas_costs.WARM_ACCESS + APPROVE_ALL_CODE.gas_cost(fork)
+    clearer_gas_used = gas_costs.COLD_ACCOUNT_ACCESS + clearer_code.gas_cost(
+        fork
     )
-    clearer_gas_used = (
-        gas_costs.COLD_ACCOUNT_ACCESS + clearer_code.gas_cost(fork)
-    )
-    intrinsic_execution, _ = gas_anchors(
-        fork, [b"", b"", b""], [], SCHEME_GAS
-    )
-    fixed_gas_used = (
-        intrinsic_execution + verify_gas_used + clearer_gas_used
-    )
+    intrinsic_execution, _ = gas_anchors(fork, [b"", b"", b""], [], SCHEME_GAS)
+    fixed_gas_used = intrinsic_execution + verify_gas_used + clearer_gas_used
     # Position the pre-refund gas so that one fifth of it lands below,
     # exactly at, or above the refund counter.
     if quotient_position == "under":
@@ -598,8 +572,8 @@ def test_refund_accounting(
         target_total = 5 * refund
     else:
         target_total = 5 * refund - 5_000
-    burner_gas = target_total - fixed_gas_used - (
-        gas_costs.COLD_ACCOUNT_ACCESS
+    burner_gas = (
+        target_total - fixed_gas_used - (gas_costs.COLD_ACCOUNT_ACCESS)
     )
     burner = pre.deploy_contract(code=burner_code(burner_gas))
     burner_gas_used = gas_costs.COLD_ACCOUNT_ACCESS + burner_gas
@@ -696,15 +670,12 @@ def test_refund_discarded_with_revert(
         restored = clearer
     else:
         child_code = clear_code + Op.STOP
-        child = pre.deploy_contract(
-            code=child_code, storage={SLOT_CLEARED: 1}
-        )
+        child = pre.deploy_contract(code=child_code, storage={SLOT_CLEARED: 1})
         # Call the clearing child with ample gas, then revert the
         # frame, discarding the child's committed clear and refund.
-        parent_code = (
-            Op.POP(Op.CALL(Op.GAS, child, 0, 0, 0, 0, 0))
-            + Op.REVERT(0, 0)
-        )
+        parent_code = Op.POP(
+            Op.CALL(Op.GAS, child, 0, 0, 0, 0, 0)
+        ) + Op.REVERT(0, 0)
         parent = pre.deploy_contract(code=parent_code)
         # The call's gas model already prices the cold access to the
         # child; only the frame entry access is added on top.
@@ -717,9 +688,7 @@ def test_refund_discarded_with_revert(
         frame_target = parent
         restored = child
 
-    verify_gas_used = (
-        gas_costs.WARM_ACCESS + APPROVE_ALL_CODE.gas_cost(fork)
-    )
+    verify_gas_used = gas_costs.WARM_ACCESS + APPROVE_ALL_CODE.gas_cost(fork)
     intrinsic_execution, _ = gas_anchors(fork, [b"", b""], [], SCHEME_GAS)
     # No refund term: the revert discarded the counter contribution.
     gas_used = intrinsic_execution + verify_gas_used + clearer_gas_used
@@ -740,9 +709,7 @@ def test_refund_discarded_with_revert(
                 FrameReceipt(
                     status=Spec.STATUS_SUCCESS, gas_used=verify_gas_used
                 ),
-                FrameReceipt(
-                    status=frame_status, gas_used=clearer_gas_used
-                ),
+                FrameReceipt(status=frame_status, gas_used=clearer_gas_used),
             ],
         ),
     )

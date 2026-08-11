@@ -148,9 +148,7 @@ def test_expiry_verifier_from_child_call(
     """
     sender = pre.fund_eoa()
     if call_kind in (Op.CALL, Op.CALLCODE):
-        invocation = call_kind(
-            Op.GAS, Spec.EXPIRY_VERIFIER, 0, 0, 8, 0, 0
-        )
+        invocation = call_kind(Op.GAS, Spec.EXPIRY_VERIFIER, 0, 0, 8, 0, 0)
     else:
         invocation = call_kind(Op.GAS, Spec.EXPIRY_VERIFIER, 0, 8, 0, 0)
     dispatcher = pre.deploy_contract(
@@ -335,10 +333,7 @@ def test_expiry_verifier_exact_gas(
     `VERIFY` frame and invalidates the transaction.
     """
     sender = pre.fund_eoa()
-    exact = (
-        fork.gas_costs().COLD_ACCOUNT_ACCESS
-        + EXPIRY_SUCCESS_EXECUTION_GAS
-    )
+    exact = fork.gas_costs().COLD_ACCOUNT_ACCESS + EXPIRY_SUCCESS_EXECUTION_GAS
 
     expected_receipt = None
     if error is None:

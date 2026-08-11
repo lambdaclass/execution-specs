@@ -66,18 +66,14 @@ def test_mixed_transaction_block(
     """
     legacy_sender = pre.fund_eoa()
     market_sender = pre.fund_eoa()
-    frame_sender = pre.deploy_contract(
-        code=APPROVE_ALL_CODE, balance=10**18
-    )
+    frame_sender = pre.deploy_contract(code=APPROVE_ALL_CODE, balance=10**18)
     recipient = pre.fund_eoa(amount=1)
     gas_costs = fork.gas_costs()
 
     transfer_gas = fork.transaction_intrinsic_cost_calculator()(
         calldata=b"", sends_value=True
     )
-    verify_gas_used = (
-        gas_costs.WARM_ACCESS + APPROVE_ALL_CODE.gas_cost(fork)
-    )
+    verify_gas_used = gas_costs.WARM_ACCESS + APPROVE_ALL_CODE.gas_cost(fork)
     frame_gas_used = (
         Spec.FRAME_TX_INTRINSIC_COST
         + Spec.FRAME_TX_PER_FRAME_COST
@@ -251,9 +247,7 @@ def test_logs_concatenation(
     reverting_logger = pre.deploy_contract(
         code=Op.LOG1(0, 0, TOPIC_DROPPED) + Op.REVERT(0, 0)
     )
-    last_logger = pre.deploy_contract(
-        code=Op.LOG1(0, 0, TOPIC_LAST) + Op.STOP
-    )
+    last_logger = pre.deploy_contract(code=Op.LOG1(0, 0, TOPIC_LAST) + Op.STOP)
 
     tx = Transaction(
         sender=sender,
@@ -313,10 +307,7 @@ def test_deploy_then_use(
     runtime_word = int.from_bytes(
         bytes(deployed_runtime).ljust(32, b"\x00"), "big"
     )
-    initcode = (
-        Op.MSTORE(0, runtime_word)
-        + Op.RETURN(0, len(deployed_runtime))
-    )
+    initcode = Op.MSTORE(0, runtime_word) + Op.RETURN(0, len(deployed_runtime))
     # The initcode exceeds one word, so the factory stores it in two.
     initcode_bytes = bytes(initcode).ljust(64, b"\x00")
     factory = pre.deploy_contract(

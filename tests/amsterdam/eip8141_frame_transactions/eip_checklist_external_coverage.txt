@@ -1,0 +1,1 @@
+general/code_coverage/eels = filling this directory through the EELS t8n executes the frame-transaction implementation of the Amsterdam fork module end to end, so the reference implementation is exercised by the fill gate itself.

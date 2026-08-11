@@ -90,6 +90,7 @@ def test_default_code_signature_requirements(
             )
         ]
     else:
+        assert sender.key is not None
         signatures = [signed_digest_entry(sender.key)]
 
     tx = Transaction(
