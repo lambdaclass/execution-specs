@@ -4,11 +4,19 @@ Reference spec: `EIPS/eip-8250.md` @ `c9d962f194b9b167e045b3b68a7a292cdc4cec7f`.
 All tests are gated on `valid_from("Bogota")`, the pseudo-fork that registers
 the `EIP8250` mixin on top of `EIP8141`.
 
+No test asserts a constant's value directly: an equality between two symbols
+of this repository cannot fail for a client. Each constant is pinned by the
+behaviour either side of it instead — `MAX_NONCE_KEYS` by
+`test_nonce_key_collection_bounds`, `KEYED_NONCE_FIRST_USE_GAS` by
+`test_first_use_surcharge_one_key_gas_triptych`, `MAX_NONCE_SEQ` by
+`test_highest_keyed_sequence_becomes_exhausted`, `NONCE_MANAGER` by the slot
+and call-context modules, and `NONCE_MANAGER_CODE` by the exact six gas its
+five bytes cost in `test_manager_as_tx_entry_point`.
+
 ## Constants and wire format — `test_vectors.py`
 
 | Function Name | Goal | Setup | Expectation | Status |
 | --- | --- | --- | --- | --- |
-| `test_pinned_constant_table` | Pin the constant table against the implementation | Import the production constants | `NONCE_MANAGER` is `0x8250`, code `60006000fd`, first-use gas 20,000, `MAX_NONCE_SEQ` `2**64-1`, `MAX_NONCE_KEYS` 16 | Implemented |
 | `test_payload_exact_rlp_and_signature_vector` | Pin the ten-field payload layout and signing hash | Fixed sender `0x11..11`, one empty frame, `[0]`/`0` | Hand-assembled RLP payload byte string and a hard-coded Keccak signing hash | Implemented |
 | `test_nonce_calldata_pricing_vectors` | Pin `nonce_calldata` encoding and its token counts | Three key/sequence shapes | Hand-encoded RLP plus independently counted tokens, standard gas, and floor gas | Implemented |
 | `test_storage_slot_hardcoded_vectors` | Pin the slot preimage | Sender `0x1234`, keys 1 and 2 | Two hard-coded Keccak slot vectors that differ from each other | Implemented |

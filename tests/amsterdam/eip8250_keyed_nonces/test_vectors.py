@@ -13,14 +13,6 @@ from execution_testing import (
     Transaction,
 )
 
-from ethereum.forks.amsterdam.transactions.frame_transaction import (
-    KEYED_NONCE_FIRST_USE_GAS,
-    MAX_NONCE_KEYS,
-    MAX_NONCE_SEQ,
-    NONCE_MANAGER,
-    NONCE_MANAGER_CODE,
-)
-
 from .spec import Spec, ref_spec_8250
 
 REFERENCE_SPEC_GIT_PATH = ref_spec_8250.git_path
@@ -52,26 +44,6 @@ def fill_valid_legacy_key_control(
         ),
         post={sender: Account(nonce=1)},
     )
-
-
-def test_pinned_constant_table(
-    state_test: StateTestFiller,
-    pre: Alloc,
-) -> None:
-    """
-    Pin R-002 through R-006.
-
-    Expected literals are copied from the pinned EIP constant table and are
-    compared to the production implementation constants, so changing the
-    implementation (rather than this test's reference helper) fails the test.
-    """
-    assert NONCE_MANAGER == bytes(Address(0x8250))
-    assert NONCE_MANAGER_CODE == bytes.fromhex("60006000fd")
-    assert KEYED_NONCE_FIRST_USE_GAS == 20_000
-    assert MAX_NONCE_SEQ == 18_446_744_073_709_551_615
-    assert MAX_NONCE_KEYS == 16
-
-    fill_valid_legacy_key_control(state_test, pre)
 
 
 def test_payload_exact_rlp_and_signature_vector(
