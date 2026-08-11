@@ -53,6 +53,11 @@ class Spec:
     SCHEME_SECP256K1 = 0x1
     SCHEME_P256 = 0x2
 
+    # Signature verification gas per scheme
+    GAS_SIGNATURE_ARBITRARY = 100
+    GAS_SIGNATURE_SECP256K1 = 2_800
+    GAS_SIGNATURE_P256 = 6_700
+
     # Frame receipt statuses
     STATUS_FAILURE = 0
     STATUS_SUCCESS = 1
