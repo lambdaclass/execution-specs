@@ -58,6 +58,14 @@ class Spec:
     GAS_SIGNATURE_SECP256K1 = 2_800
     GAS_SIGNATURE_P256 = 6_700
 
+    # Introspection instruction gas
+    GAS_TXPARAM = 2
+    GAS_FRAMEDATALOAD = 3
+    GAS_FRAMEDATACOPY_BASE = 3
+    GAS_FRAMEDATACOPY_PER_WORD = 3
+    GAS_FRAMEPARAM = 2
+    GAS_SIGPARAM = 2
+
     # Frame receipt statuses
     STATUS_FAILURE = 0
     STATUS_SUCCESS = 1
