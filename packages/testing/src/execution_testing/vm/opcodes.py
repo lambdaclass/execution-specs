@@ -5965,6 +5965,7 @@ class Opcodes(Opcode, Enum):
         pushed_stack_items=0,
         kwargs=["offset", "size", "scope"],
         terminating=True,
+        metadata={"new_memory_size": 0, "old_memory_size": 0},
     )
     """
     APPROVE(offset, size, scope)
@@ -6061,6 +6062,7 @@ class Opcodes(Opcode, Enum):
         popped_stack_items=4,
         pushed_stack_items=0,
         kwargs=["dest_offset", "offset", "size", "frame_index"],
+        metadata={"data_size": 0, "new_memory_size": 0, "old_memory_size": 0},
     )
     """
     FRAMEDATACOPY(dest_offset, offset, size, frame_index)

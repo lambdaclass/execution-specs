@@ -8,7 +8,9 @@ https://eips.ethereum.org/EIPS/eip-8141
 """
 
 from dataclasses import replace
-from typing import List, Mapping, Sequence
+from typing import Callable, Dict, List, Mapping, Sequence
+
+from execution_testing.vm import OpcodeBase, Opcodes
 
 from execution_testing.base_types import Bytes
 
@@ -232,6 +234,51 @@ class EIP8141(BaseFork):
             )
 
         return fn
+
+    @classmethod
+    def valid_opcodes(cls) -> List[Opcodes]:
+        """Add the frame transaction instructions."""
+        return [
+            Opcodes.APPROVE,
+            Opcodes.TXPARAM,
+            Opcodes.FRAMEDATALOAD,
+            Opcodes.FRAMEDATACOPY,
+            Opcodes.FRAMEPARAM,
+            Opcodes.SIGPARAM,
+        ] + super(EIP8141, cls).valid_opcodes()
+
+    @classmethod
+    def opcode_gas_map(
+        cls,
+    ) -> Dict[OpcodeBase, int | Callable[[OpcodeBase], int]]:
+        """
+        Add gas costs for the frame transaction instructions.
+
+        `APPROVE` charges only the memory expansion of its return-data
+        region, like `RETURN`. `FRAMEDATACOPY` is priced exactly as
+        `CALLDATACOPY`. `SIGPARAM` is mapped at its metadata cost; its
+        copy operation additionally charges as `CALLDATACOPY`, which a
+        per-opcode map cannot express.
+        """
+        gas_costs = cls.gas_costs()
+        memory_expansion_calculator = cls.memory_expansion_gas_calculator()
+        base_map = super(EIP8141, cls).opcode_gas_map()
+        return {
+            **base_map,
+            Opcodes.APPROVE: cls._with_memory_expansion(
+                0, memory_expansion_calculator
+            ),
+            Opcodes.TXPARAM: gas_costs.BASE,
+            Opcodes.FRAMEDATALOAD: gas_costs.OPCODE_CALLDATALOAD,
+            Opcodes.FRAMEDATACOPY: cls._with_memory_expansion(
+                cls._with_data_copy(
+                    gas_costs.OPCODE_CALLDATACOPY_BASE, gas_costs
+                ),
+                memory_expansion_calculator,
+            ),
+            Opcodes.FRAMEPARAM: gas_costs.BASE,
+            Opcodes.SIGPARAM: gas_costs.BASE,
+        }
 
     @classmethod
     def pre_allocation(cls) -> Mapping:
