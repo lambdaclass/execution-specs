@@ -5,6 +5,7 @@ from typing import Any, cast
 
 import pytest
 from ethereum.forks.amsterdam.fork import BlockChain, apply_fork
+from ethereum.forks.amsterdam.fork_types import ExecutionGas, StateGas
 from ethereum.forks.amsterdam.frame_processing import check_frame_transaction
 from ethereum.forks.amsterdam.transactions import decode_transaction
 from ethereum.forks.amsterdam.transactions.frame_transaction import (
@@ -511,7 +512,11 @@ def test_approval_read_order_oog_and_unmetered_bookkeeping(
 
     failing_env = environment()
     required_gas = 20_000 * key_count
-    failing_meter = GasMeter(Uint(required_gas - 1), Uint(0), Uint(0))
+    failing_meter = GasMeter(
+        ExecutionGas(Uint(required_gas - 1)),
+        StateGas(Uint(0)),
+        StateGas(Uint(0)),
+    )
     with pytest.raises(OutOfGasError):
         attempt_approval(failing_env, tx.frames[0].flags, failing_meter)
     assert events == [("read", slot, None) for slot in expected_slots]
@@ -520,7 +525,11 @@ def test_approval_read_order_oog_and_unmetered_bookkeeping(
 
     events.clear()
     successful_env = environment()
-    successful_meter = GasMeter(Uint(required_gas), Uint(0), Uint(0))
+    successful_meter = GasMeter(
+        ExecutionGas(Uint(required_gas)),
+        StateGas(Uint(0)),
+        StateGas(Uint(0)),
+    )
     assert attempt_approval(
         successful_env, tx.frames[0].flags, successful_meter
     )
@@ -618,7 +627,9 @@ def test_disjoint_keys_do_not_imply_shared_state_success(
         )
 
     assert [storage.get(slot, U256(0)) for slot in slots] == [U256(0), U256(0)]
-    first_meter = GasMeter(Uint(20_000), Uint(0), Uint(0))
+    first_meter = GasMeter(
+        ExecutionGas(Uint(20_000)), StateGas(Uint(0)), StateGas(Uint(0))
+    )
     assert attempt_approval(
         environment(frame_transactions[0]),
         frame_transactions[0].frames[0].flags,
@@ -628,7 +639,9 @@ def test_disjoint_keys_do_not_imply_shared_state_success(
     assert payer.balance == U256(0)
 
     reads.clear()
-    second_meter = GasMeter(Uint(20_000), Uint(0), Uint(0))
+    second_meter = GasMeter(
+        ExecutionGas(Uint(20_000)), StateGas(Uint(0)), StateGas(Uint(0))
+    )
     assert not attempt_approval(
         environment(frame_transactions[1]),
         frame_transactions[1].frames[0].flags,

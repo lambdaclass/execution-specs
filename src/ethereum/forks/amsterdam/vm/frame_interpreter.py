@@ -361,9 +361,9 @@ def execute_default_verify_code(
     resolved_target = resolve_frame_target(tx, frame)
 
     gas_meter = GasMeter(
-        gas_left=Uint(frame.gas),
-        state_gas_left=Uint(0),
-        state_gas_baseline=Uint(0),
+        gas_left=ExecutionGas(Uint(frame.gas)),
+        state_gas_left=StateGas(Uint(0)),
+        state_gas_baseline=StateGas(Uint(0)),
     )
 
     def outcome(status: FrameStatus) -> FrameOutcome:

@@ -457,7 +457,9 @@ def attempt_approval(
             )
             charge_gas_from_meter(
                 gas_meter,
-                KEYED_NONCE_FIRST_USE_GAS * Uint(first_use_count),
+                ExecutionGas(
+                    KEYED_NONCE_FIRST_USE_GAS * Uint(first_use_count)
+                ),
             )
 
     if approves_execution:
