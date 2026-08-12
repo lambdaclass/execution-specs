@@ -303,9 +303,10 @@ class ExecutionSpecsExceptionMapper(ExceptionMapper):
             r"'.*transactions' has no attribute 'SetCodeTransaction'|"
             r"transaction type 4 is not supported in .*"
         ),
-        # Frame-count and blob-fee violations are static frame
-        # transaction format errors, but ExecutionSpecs raises them as
-        # dedicated exception classes rather than InvalidFrameError.
+        # Frame-count, blob-fee, and maximum-cost violations are static
+        # frame transaction format errors, but ExecutionSpecs raises
+        # them as dedicated exception classes rather than
+        # InvalidFrameError.
         # The "invalid frame ... field" messages come from the t8n
         # transaction loader for field values the transaction types
         # reject as they are constructed (undefined modes, flags, or

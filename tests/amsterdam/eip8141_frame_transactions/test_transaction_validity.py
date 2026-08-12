@@ -245,7 +245,7 @@ OVERFLOW_MAX_GAS = 2**24
         ),
         pytest.param(
             2**232,
-            TransactionException.TYPE_6_INVALID_FRAME_EXECUTION,
+            TransactionException.TYPE_6_INVALID_FRAME_FORMAT,
             id="max_cost_at_overflow",
             marks=pytest.mark.exception_test,
         ),
@@ -263,15 +263,13 @@ def test_max_cost_overflow(
 
     The frame gas limit is sized so the derived transaction gas limit
     is exactly `2**24`; a maximum fee of `2**232` then makes
-    `max_gas * max_fee_per_gas` exactly `2**256`, which no payer
-    balance can cover — the approving frame reverts and the
-    transaction is invalid. One fee step below, the product fits and
-    a maximally funded payer covers it.
+    `max_gas * max_fee_per_gas` exactly `2**256`, which the spec's gas
+    accounting rejects — the maximum cost the payer escrows must fit in
+    a machine word. One fee step below, the product fits and a
+    maximally funded payer covers it.
 
-    The pinned spec asserts the product bound in its gas accounting;
-    the reference implementation reaches the same rejection through
-    the payment approval's balance check, so the observable class is
-    the frame-execution one. Recorded in the run's spec feedback.
+    The bound is checked as the maximum cost is derived, before any
+    frame executes, so the observable class is a static one.
     """
     cap = fork.transaction_gas_limit_cap()
     assert cap is not None and cap >= OVERFLOW_MAX_GAS
