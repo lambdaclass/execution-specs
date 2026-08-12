@@ -13,7 +13,7 @@ behaviour either side of it instead — `MAX_NONCE_KEYS` by
 and call-context modules, and `NONCE_MANAGER_CODE` by the exact six gas its
 five bytes cost in `test_manager_as_tx_entry_point`.
 
-## Constants and wire format — `test_vectors.py`
+## Hand-computed vectors — `test_vectors.py`
 
 | Function Name | Goal | Setup | Expectation | Status |
 | --- | --- | --- | --- | --- |
