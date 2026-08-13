@@ -142,11 +142,11 @@ def test_payload_structure(
     """
     Reject payloads that are not the exact nine-element list.
 
-    Pins R-024 (payload field list), and through the extra-element
-    arms R-225/R-226 (the payload admits no tenth list such as an
-    authorization or access list). The wrong-type-byte arm pins the
-    wire side of R-001: a frame transaction body under any other
-    envelope byte is not a frame transaction.
+    Pins the payload's field list, and through the extra-element arms
+    that it admits no tenth list such as an authorization or access
+    list. The wrong-type-byte arm pins the wire side of the type
+    itself: a frame transaction body under any other envelope byte is
+    not a frame transaction.
     """
     kwargs = canonical_transaction_kwargs(pre)
     tx: Transaction
@@ -228,12 +228,12 @@ def test_payload_field_encoding(
 
     The out-of-range arms encode the first integer that no canonical
     encoding can represent within each field's bound — `2**256` for
-    chain id and the three fee fields (R-036, R-039, R-040, R-041)
-    and `2**64` for the nonce (R-038) — so the bound is only reachable
+    chain id and the three fee fields, and `2**64` for the nonce — so
+    the bound is only reachable
     at the wire level. The leading-zero arm violates the canonical
     integer form without changing the value. The sender and blob hash
-    arms change only the byte length of one fixed-length field (R-044,
-    R-045), keeping the blob hash version byte valid.
+    arms change only the byte length of one fixed-length field,
+    keeping the blob hash version byte valid.
     """
     kwargs = canonical_transaction_kwargs(pre)
     tx: Transaction
@@ -379,13 +379,12 @@ def test_frame_item_encoding(
     """
     Reject frame items that are not the exact six-element tuple.
 
-    Pins R-025 (frame tuple field list), R-055 (a present target is
-    exactly twenty bytes; the accept side of the empty-string null
-    target ships in every default-code state fixture of this
-    directory), and R-057 (`2**256` as the first unrepresentable
-    frame value, reachable only at the wire level). The mutated frame
-    rides behind the canonical `VERIFY` frame so the tuple shape is
-    the only violated clause.
+    Pins the frame tuple's field list; that a present target is
+    exactly twenty bytes, whose accept side ships in every default-code
+    state fixture of this directory; and `2**256` as the first
+    unrepresentable frame value, reachable only at the wire level. The
+    mutated frame rides behind the canonical `VERIFY` frame so the tuple
+    shape is the only violated clause.
     """
     kwargs = canonical_transaction_kwargs(pre)
     target = pre.nonexistent_account()
@@ -510,7 +509,7 @@ def test_signature_item_encoding(
     """
     Reject signature items that are not the exact four-element tuple.
 
-    Pins R-026 (signature tuple field list). Every arm keeps the entry
+    Pins the signature tuple's field list. Every arm keeps the entry
     contents valid — the scheme, the explicit twenty-byte sender as
     signer, the empty message, and a real secp256k1 signature where
     the tuple still serializes one — so the tuple shape is the only
