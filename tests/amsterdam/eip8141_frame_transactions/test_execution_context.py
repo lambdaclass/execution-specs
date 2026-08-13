@@ -15,6 +15,7 @@ from execution_testing import (
     Account,
     Alloc,
     Bytes,
+    EIPChecklist,
     Frame,
     FrameReceipt,
     Op,
@@ -317,6 +318,9 @@ SENDER_FUNDS = 10**18
         pytest.param(1, False, id="value_above_remaining_balance"),
     ],
 )
+@EIPChecklist.TransactionType.Test.IntrinsicValidity.ValueNonZeroSufficientBalance()
+@EIPChecklist.TransactionType.Test.IntrinsicValidity.ValueNonZeroInsufficientBalance()
+@EIPChecklist.TransactionType.Test.SenderAccount.Balance()
 def test_sender_value_balance_boundary(
     state_test: StateTestFiller,
     pre: Alloc,

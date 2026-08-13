@@ -16,6 +16,7 @@ from execution_testing import (
     Account,
     Alloc,
     Bytes,
+    EIPChecklist,
     FrameSignature,
     StateTestFiller,
     Transaction,
@@ -121,6 +122,18 @@ pytestmark = pytest.mark.valid_from("Bogota")
         ),
     ],
 )
+@EIPChecklist.TransactionType.Test.Signature.Invalid.FieldOutsideCurve()
+@EIPChecklist.TransactionType.Test.Signature.Invalid.V.TwentyEight()
+@EIPChecklist.TransactionType.Test.Signature.Invalid.V.ThirtyFive()
+@EIPChecklist.TransactionType.Test.Signature.Invalid.V.ThirtySix()
+@EIPChecklist.TransactionType.Test.Signature.Invalid.V.Max()
+@EIPChecklist.TransactionType.Test.Signature.Invalid.R.Secp256k1nMinusOne()
+@EIPChecklist.TransactionType.Test.Signature.Invalid.R.Secp256k1nPlusOne()
+@EIPChecklist.TransactionType.Test.Signature.Invalid.R.MaxMinusOne()
+@EIPChecklist.TransactionType.Test.Signature.Invalid.S.Secp256k1nHalfMinusOne()
+@EIPChecklist.TransactionType.Test.Signature.Invalid.S.Secp256k1nHalf()
+@EIPChecklist.TransactionType.Test.Signature.Invalid.S.Secp256k1n()
+@EIPChecklist.TransactionType.Test.Signature.Invalid.S.MaxMinusOne()
 def test_signature_component_edges(
     state_test: StateTestFiller,
     pre: Alloc,
@@ -148,6 +161,55 @@ def test_signature_component_edges(
             entry,
         ],
         error=error,
+    )
+
+    state_test(
+        pre=pre,
+        tx=tx,
+        post={sender: Account(nonce=0)},
+    )
+
+
+@pytest.mark.exception_test
+@pytest.mark.parametrize(
+    "value",
+    [
+        # The first `s` above the low-half bound, which the companion
+        # arm at the bound itself passes.
+        pytest.param(SECP256K1N // 2 + 1, id="s_half_order_plus_one"),
+        pytest.param(SECP256K1N - 1, id="s_below_curve_order"),
+        pytest.param(SECP256K1N + 1, id="s_above_curve_order"),
+    ],
+)
+@EIPChecklist.TransactionType.Test.Signature.Invalid.S.Secp256k1nHalfPlusOne()
+@EIPChecklist.TransactionType.Test.Signature.Invalid.S.Secp256k1nMinusOne()
+@EIPChecklist.TransactionType.Test.Signature.Invalid.S.Secp256k1nPlusOne()
+def test_high_s_range_bound(
+    state_test: StateTestFiller,
+    pre: Alloc,
+    value: int,
+) -> None:
+    """
+    Reject every `s` above the low-half bound, from the first value
+    past it up to one above the curve order.
+
+    `test_signature_component_edges` accepts the bound itself into the
+    range check — it reaches recovery and fails there with the format
+    exception — so the two together place the comparison exactly at
+    half the curve order.
+    """
+    sender = pre.fund_eoa()
+    assert sender.key is not None
+    entry = with_tampered_components(signed_digest_entry(sender.key), s=value)
+
+    tx = Transaction(
+        sender=sender,
+        frames=[verify_frame()],
+        signatures=[
+            FrameSignature(scheme=Spec.SCHEME_SECP256K1, signer=Bytes(sender)),
+            entry,
+        ],
+        error=TransactionException.TYPE_6_INVALID_SIGNATURE,
     )
 
     state_test(

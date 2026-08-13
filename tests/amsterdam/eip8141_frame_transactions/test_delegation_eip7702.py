@@ -12,6 +12,7 @@ import pytest
 from execution_testing import (
     Account,
     Alloc,
+    EIPChecklist,
     Op,
     StateTestFiller,
     Transaction,
@@ -92,6 +93,7 @@ def test_delegated_sender_bypasses_default_code(
         pytest.param(Spec.MODE_SENDER, id="sender_frame"),
     ],
 )
+@EIPChecklist.Opcode.Test.ExecutionContext.SetCode()
 def test_delegated_target_in_frames(
     state_test: StateTestFiller,
     pre: Alloc,

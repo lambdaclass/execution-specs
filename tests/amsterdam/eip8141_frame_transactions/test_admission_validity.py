@@ -17,6 +17,7 @@ import pytest
 from execution_testing import (
     Account,
     Alloc,
+    EIPChecklist,
     Fork,
     StateTestFiller,
     Transaction,
@@ -107,6 +108,8 @@ def test_admission_constraints(
 
 # Funding an EOA with a custom nonce mutates the shared pre-alloc.
 @pytest.mark.pre_alloc_mutable
+@EIPChecklist.TransactionType.Test.IntrinsicValidity.NonceExact()
+@EIPChecklist.TransactionType.Test.SenderAccount.Nonce()
 def test_nonce_at_maximum(
     state_test: StateTestFiller,
     pre: Alloc,

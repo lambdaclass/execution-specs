@@ -19,6 +19,7 @@ from execution_testing import (
     Alloc,
     Block,
     BlockchainTestFiller,
+    EIPChecklist,
     Environment,
     Fork,
     FrameReceipt,
@@ -63,6 +64,7 @@ APPROVE_ALL_CODE = Op.APPROVE(0, 0, Spec.APPROVE_EXECUTION_AND_PAYMENT)
 """Sender code approving execution and payment."""
 
 
+@EIPChecklist.TransactionType.Test.BlockInteractions.MixedTxs()
 def test_mixed_transaction_block(
     blockchain_test: BlockchainTestFiller,
     pre: Alloc,
@@ -362,6 +364,9 @@ def test_deploy_then_use(
         ),
     ],
 )
+@EIPChecklist.TransactionType.Test.BlockInteractions.LastTx.Valid()
+@EIPChecklist.TransactionType.Test.BlockInteractions.LastTx.Invalid()
+@EIPChecklist.TransactionType.Test.BlockInteractions.SingleTx.Invalid()
 def test_block_gas_pool_returns_unused(
     blockchain_test: BlockchainTestFiller,
     pre: Alloc,

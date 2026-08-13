@@ -20,6 +20,7 @@ from execution_testing import (
     AuthorizationTuple,
     Bytecode,
     Bytes,
+    EIPChecklist,
     Fork,
     FrameReceipt,
     FrameSignature,
@@ -272,6 +273,7 @@ def test_approve_scope_refusals(
     )
 
 
+@EIPChecklist.Opcode.Test.Terminating.Scenarios.TopLevel()
 def test_approve_strict_subset_scope(
     state_test: StateTestFiller,
     pre: Alloc,
@@ -398,6 +400,8 @@ def test_approve_duplicate_scopes(
     )
 
 
+@EIPChecklist.Opcode.Test.ReturnData.Buffer.Parent()
+@EIPChecklist.Opcode.Test.Terminating.Scenarios.SubLevel()
 def test_approve_return_data(
     state_test: StateTestFiller,
     pre: Alloc,
@@ -584,6 +588,7 @@ def test_approve_from_delegatecall(
     )
 
 
+@EIPChecklist.Opcode.Test.Terminating.Scenarios.Initcode()
 def test_approve_in_initcode_reverts_create(
     state_test: StateTestFiller,
     pre: Alloc,
@@ -829,6 +834,8 @@ def test_verify_frame_after_sender_frame_unwinds(
         pytest.param(False, id="paymaster_pays"),
     ],
 )
+@EIPChecklist.TransactionType.Test.IntrinsicValidity.ValueZeroSufficientBalance()
+@EIPChecklist.TransactionType.Test.IntrinsicValidity.ValueZeroInsufficientBalance()
 def test_payment_balance_boundary(
     state_test: StateTestFiller,
     pre: Alloc,
@@ -916,6 +923,7 @@ def test_payment_balance_boundary(
     ],
 )
 @pytest.mark.parametrize("tx_type", [0, 2, 4])
+@EIPChecklist.TransactionType.Test.TxScopedAttributes.OlderTxTypes()
 def test_opcodes_undefined_in_other_tx_types(
     state_test: StateTestFiller,
     pre: Alloc,

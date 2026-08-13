@@ -1,1 +1,3 @@
 general/code_coverage/eels = filling this directory through the EELS t8n executes the frame-transaction implementation of the Amsterdam fork module end to end, so the reference implementation is exercised by the fill gate itself.
+general/code_coverage/test_coverage = Run `uv run fill --cov tests/amsterdam/eip8141_frame_transactions` to check the test code's own coverage.
+general/code_coverage/missed_lines = The frame-transaction paths reached only by a second client — the mempool validation prefix and the licensed expiry-verifier shortcut — are policy rather than consensus, and are declared not applicable above rather than filled.

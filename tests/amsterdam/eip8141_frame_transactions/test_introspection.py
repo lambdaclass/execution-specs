@@ -17,6 +17,7 @@ from execution_testing import (
     Alloc,
     Bytecode,
     Bytes,
+    EIPChecklist,
     Frame,
     FrameSignature,
     Op,
@@ -92,6 +93,8 @@ def probe_transaction(
         pytest.param(Spec.TXPARAM_SIGNATURE_COUNT, 1, id="signature_count"),
     ],
 )
+@EIPChecklist.Opcode.Test.ExecutionContext.TxContext()
+@EIPChecklist.TransactionType.Test.TxScopedAttributes.Read()
 def test_txparam(
     state_test: StateTestFiller,
     pre: Alloc,
@@ -400,6 +403,8 @@ def test_frameparam_halts(
         ),
     ],
 )
+@EIPChecklist.Opcode.Test.ExceptionalAbort()
+@EIPChecklist.Opcode.Test.OutOfBounds.Verify.MaxPlusOne()
 def test_introspection_halts(
     state_test: StateTestFiller,
     pre: Alloc,

@@ -21,6 +21,7 @@ from execution_testing import (
     Alloc,
     Bytecode,
     Bytes,
+    EIPChecklist,
     Environment,
     Fork,
     FrameReceipt,
@@ -30,6 +31,9 @@ from execution_testing import (
     Transaction,
     TransactionReceipt,
     keccak256,
+)
+from execution_testing import (
+    Macros as Om,
 )
 
 from .helpers import default_frame, verify_frame
@@ -133,6 +137,7 @@ SCHEME_GAS = {
 """Signature verification gas per scheme, from the spec's table."""
 
 
+@EIPChecklist.GasCostChanges.Test.GasUpdatesMeasurement()
 def test_exact_gas_accounting_standard(
     state_test: StateTestFiller,
     pre: Alloc,
@@ -204,6 +209,7 @@ def test_exact_gas_accounting_standard(
     )
 
 
+@EIPChecklist.TransactionType.Test.IntrinsicValidity.DataFloorAboveIntrinsicGasCost()
 def test_exact_gas_accounting_floor_dominant(
     state_test: StateTestFiller,
     pre: Alloc,
@@ -361,6 +367,7 @@ def test_signature_gas_constants(
         pytest.param(1, id="frame_gas_exact_minus_one"),
     ],
 )
+@EIPChecklist.GasCostChanges.Test.OutOfGas()
 def test_frame_oog_isolation(
     state_test: StateTestFiller,
     pre: Alloc,
@@ -529,6 +536,9 @@ def burner_code(target_gas: int) -> Bytecode:
         pytest.param("over", id="refund_above_quotient"),
     ],
 )
+@EIPChecklist.GasRefundsChanges.Test.RefundCalculation.Under()
+@EIPChecklist.GasRefundsChanges.Test.RefundCalculation.Exact()
+@EIPChecklist.GasRefundsChanges.Test.RefundCalculation.Over()
 def test_refund_accounting(
     state_test: StateTestFiller,
     pre: Alloc,
@@ -634,6 +644,9 @@ def test_refund_accounting(
         pytest.param("child_reverts", id="clearing_child_reverted"),
     ],
 )
+@EIPChecklist.GasRefundsChanges.Test.ExceptionalAbort.Revertable()
+@EIPChecklist.GasRefundsChanges.Test.ExceptionalAbort.Revertable.Revert()
+@EIPChecklist.GasRefundsChanges.Test.ExceptionalAbort.Revertable.UpperRevert()
 def test_refund_discarded_with_revert(
     state_test: StateTestFiller,
     pre: Alloc,
@@ -721,5 +734,197 @@ def test_refund_discarded_with_revert(
         post={
             sender: Account(nonce=2),
             restored: Account(storage={SLOT_CLEARED: 1}),
+        },
+    )
+
+
+HALTING_FRAME_GAS = 200_000
+"""Gas limit of the halting frame, forfeited in full."""
+
+
+@pytest.mark.parametrize(
+    "halt_tail",
+    [
+        pytest.param(Om.OOG, id="clearing_frame_runs_out_of_gas"),
+        pytest.param(Op.INVALID, id="clearing_frame_hits_invalid_opcode"),
+    ],
+)
+@EIPChecklist.GasRefundsChanges.Test.ExceptionalAbort.Revertable.OutOfGas()
+@EIPChecklist.GasRefundsChanges.Test.ExceptionalAbort.Revertable.InvalidOpcode()
+def test_refund_discarded_with_halt(
+    state_test: StateTestFiller,
+    pre: Alloc,
+    fork: Fork,
+    halt_tail: Bytecode,
+) -> None:
+    """
+    Discard the refund of a frame that clears a slot and then halts
+    exceptionally: the cumulative gas carries no refund term, the
+    frame forfeits its whole limit, and the cleared slot is restored.
+
+    A revert is the companion shape in
+    `test_refund_discarded_with_revert`; an exceptional halt differs
+    in that the frame also loses its unused gas, so its whole limit
+    enters the cumulative sum.
+    """
+    clear_code = Op.SSTORE(
+        key=SLOT_CLEARED,
+        value=0,
+        key_warm=False,
+        original_value=1,
+        current_value=1,
+        new_value=0,
+    )
+    sender = pre.deploy_contract(code=APPROVE_ALL_CODE, balance=FUNDS)
+    clearer = pre.deploy_contract(
+        code=clear_code + halt_tail, storage={SLOT_CLEARED: 1}
+    )
+
+    gas_costs = fork.gas_costs()
+    verify_gas_used = gas_costs.WARM_ACCESS + APPROVE_ALL_CODE.gas_cost(fork)
+    intrinsic_execution, _ = gas_anchors(fork, [b"", b""], [], SCHEME_GAS)
+    # The halting frame keeps nothing back and refunds nothing.
+    gas_used = intrinsic_execution + verify_gas_used + HALTING_FRAME_GAS
+
+    tx = Transaction(
+        sender=sender,
+        nonce=1,
+        max_fee_per_gas=MAX_FEE,
+        max_priority_fee_per_gas=PRIORITY_FEE,
+        frames=[
+            verify_frame(),
+            default_frame(target=clearer, gas_limit=HALTING_FRAME_GAS),
+        ],
+        expected_receipt=TransactionReceipt(
+            cumulative_gas_used=gas_used,
+            payer=sender,
+            frame_receipts=[
+                FrameReceipt(
+                    status=Spec.STATUS_SUCCESS, gas_used=verify_gas_used
+                ),
+                FrameReceipt(
+                    status=Spec.STATUS_FAILURE, gas_used=HALTING_FRAME_GAS
+                ),
+            ],
+        ),
+    )
+
+    state_test(
+        env=Environment(base_fee_per_gas=BASE_FEE),
+        pre=pre,
+        tx=tx,
+        post={
+            sender: Account(nonce=2),
+            clearer: Account(storage={SLOT_CLEARED: 1}),
+        },
+    )
+
+
+def floor_straddling_data_length(
+    fork: Fork, fixed_gas_used: int, refund: int
+) -> int:
+    """
+    Return the zero-byte frame data length whose calldata floor lands
+    strictly between the refunded and unrefunded gas.
+
+    The floor charges every byte more than the standard path prices a
+    zero token, so the gap closes as the data grows; scanning for the
+    first crossing keeps the arm straddling under repricing of either
+    side.
+    """
+    for length in range(1, 4_096):
+        intrinsic_execution, calldata_floor = gas_anchors(
+            fork, [b"\x00" * length, b""], [], SCHEME_GAS
+        )
+        standard = intrinsic_execution + fixed_gas_used
+        applied = min(refund, standard // 5)
+        if standard - applied < calldata_floor < standard:
+            return length
+    raise AssertionError("no data length straddles the floor")
+
+
+@EIPChecklist.GasRefundsChanges.Test.CrossFunctional.CalldataCost()
+def test_refund_floored_by_calldata_cost(
+    state_test: StateTestFiller,
+    pre: Alloc,
+    fork: Fork,
+) -> None:
+    """
+    Floor a refunded frame transaction at its calldata cost: the
+    refund alone would take the gas below the floor, so the floor is
+    the final gas.
+
+    The arm is sized so the unrefunded gas sits above the floor and
+    the refunded gas below it, which is the only configuration where
+    the two rules can be told apart — a client applying just one of
+    them reports a different total.
+    """
+    clear_code = Op.SSTORE(
+        key=SLOT_CLEARED,
+        value=0,
+        key_warm=False,
+        original_value=1,
+        current_value=1,
+        new_value=0,
+    )
+    clearer_code = clear_code + Op.STOP
+    clearer = pre.deploy_contract(code=clearer_code, storage={SLOT_CLEARED: 1})
+    sender = pre.deploy_contract(code=APPROVE_ALL_CODE, balance=FUNDS)
+    gas_costs = fork.gas_costs()
+
+    refund = clear_code.refund(fork)
+    verify_gas_used = gas_costs.WARM_ACCESS + APPROVE_ALL_CODE.gas_cost(fork)
+    clearer_gas_used = gas_costs.COLD_ACCOUNT_ACCESS + clearer_code.gas_cost(
+        fork
+    )
+    length = floor_straddling_data_length(
+        fork, verify_gas_used + clearer_gas_used, refund
+    )
+    zero_data = b"\x00" * length
+    intrinsic_execution, calldata_floor = gas_anchors(
+        fork, [zero_data, b""], [], SCHEME_GAS
+    )
+    standard = intrinsic_execution + verify_gas_used + clearer_gas_used
+    applied_refund = min(refund, standard // 5)
+    assert standard - applied_refund < calldata_floor < standard, (
+        "arm must straddle the floor"
+    )
+    gas_used = calldata_floor
+
+    effective_price = BASE_FEE + PRIORITY_FEE
+    env = Environment(base_fee_per_gas=BASE_FEE)
+
+    tx = Transaction(
+        sender=sender,
+        nonce=1,
+        max_fee_per_gas=MAX_FEE,
+        max_priority_fee_per_gas=PRIORITY_FEE,
+        frames=[
+            verify_frame(data=Bytes(zero_data)),
+            default_frame(target=clearer, gas_limit=100_000),
+        ],
+        expected_receipt=TransactionReceipt(
+            cumulative_gas_used=gas_used,
+            payer=sender,
+            frame_receipts=[
+                FrameReceipt(
+                    status=Spec.STATUS_SUCCESS, gas_used=verify_gas_used
+                ),
+                FrameReceipt(
+                    status=Spec.STATUS_SUCCESS, gas_used=clearer_gas_used
+                ),
+            ],
+        ),
+    )
+
+    state_test(
+        env=env,
+        pre=pre,
+        tx=tx,
+        post={
+            sender: Account(
+                nonce=2, balance=FUNDS - gas_used * effective_price
+            ),
+            env.fee_recipient: Account(balance=gas_used * PRIORITY_FEE),
         },
     )

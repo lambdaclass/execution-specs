@@ -12,6 +12,7 @@ from execution_testing import (
     Account,
     Alloc,
     Bytes,
+    EIPChecklist,
     Environment,
     Fork,
     FrameSignature,
@@ -56,6 +57,8 @@ SLOT_EXECUTED = 0x01
         ),
     ],
 )
+@EIPChecklist.TransactionType.Test.IntrinsicValidity.NonceMinusOne()
+@EIPChecklist.TransactionType.Test.IntrinsicValidity.NoncePlusOne()
 def test_nonce_mismatch(
     state_test: StateTestFiller,
     pre: Alloc,
@@ -155,6 +158,7 @@ def test_nonce_and_signature_both_invalid(
         ),
     ],
 )
+@EIPChecklist.TransactionType.Test.IntrinsicValidity.ChainId()
 def test_wrong_chain_id(
     state_test: StateTestFiller,
     pre: Alloc,
@@ -201,6 +205,8 @@ BASE_FEE = 1_000
         ),
     ],
 )
+@EIPChecklist.TransactionType.Test.IntrinsicValidity.MaxFee.BaseEqual()
+@EIPChecklist.TransactionType.Test.IntrinsicValidity.MaxFee.BaseLower()
 def test_max_fee_below_base_fee(
     state_test: StateTestFiller,
     pre: Alloc,

@@ -186,6 +186,115 @@ def test_large_batch_unroll(
     )
 
 
+TOUCHED_SLOT = 0x10
+"""Probe storage slot warmed by the frame ahead of the batch."""
+
+SLOT_BALANCE_GAS = 0x00
+"""Probe slot receiving the measured account access cost."""
+
+SLOT_SLOAD_GAS = 0x01
+"""Probe slot receiving the measured storage access cost."""
+
+SLOT_CANARY = 0x02
+"""Probe slot receiving the marker, written last."""
+
+
+def test_atomic_batch_restores_prior_warmth(
+    state_test: StateTestFiller,
+    pre: Alloc,
+    fork: Fork,
+) -> None:
+    """
+    Keep warmth accrued before an atomic batch across the batch's
+    unroll: a frame ahead of the batch warms an address and a storage
+    key, the batch fails, and an identical frame after the unroll
+    measures both accesses as warm.
+
+    The unroll restores the condition immediately before the batch
+    began, and the warm journal is shared across frames, so entries it
+    already held at that point belong to the restored condition. An
+    implementation that empties the journal instead of restoring it
+    satisfies neither measurement — the companion
+    `test_atomic_batch_unwinds_warmth` pins the other direction, that
+    warmth accrued inside the batch does not survive.
+    """
+    sender = pre.fund_eoa()
+    subject = pre.fund_eoa(amount=1)
+    warm_balance = Op.BALANCE(address_warm=True).gas_cost(fork)
+    warm_sload = Op.SLOAD(key_warm=True).gas_cost(fork)
+    measured_balance = Op.BALANCE(address=subject, address_warm=True)
+    measured_sload = Op.SLOAD(key=TOUCHED_SLOT, key_warm=True)
+    probe_code = (
+        CodeGasMeasure(
+            code=measured_balance,
+            overhead_cost=measured_balance.gas_cost(fork) - warm_balance,
+            extra_stack_items=1,
+            sstore_key=SLOT_BALANCE_GAS,
+        )
+        + CodeGasMeasure(
+            code=measured_sload,
+            overhead_cost=measured_sload.gas_cost(fork) - warm_sload,
+            extra_stack_items=1,
+            sstore_key=SLOT_SLOAD_GAS,
+        )
+        + Op.SSTORE(SLOT_CANARY, MARKER)
+    )
+    probe = pre.deploy_contract(
+        code=probe_code, storage={TOUCHED_SLOT: MARKER}
+    )
+    writer = pre.deploy_contract(
+        code=Op.SSTORE(Op.CALLDATALOAD(0), MARKER) + Op.STOP
+    )
+    reverter = pre.deploy_contract(code=Op.REVERT(0, 0))
+
+    tx = Transaction(
+        sender=sender,
+        frames=[
+            verify_frame(),
+            # Ahead of the batch: this run pays the cold accesses and,
+            # by succeeding, commits them to the shared journal.
+            default_frame(target=probe, gas_limit=WRITE_FRAME_GAS),
+            default_frame(
+                flags=Spec.ATOMIC_BATCH_FLAG,
+                target=writer,
+                data=slot_word(0),
+                gas_limit=WRITE_FRAME_GAS,
+            ),
+            default_frame(target=reverter, gas_limit=100_000),
+            # After the unroll: the same measurements, now expected
+            # warm, overwrite the cold ones the first run stored.
+            default_frame(target=probe, gas_limit=WRITE_FRAME_GAS),
+        ],
+        expected_receipt=TransactionReceipt(
+            payer=sender,
+            frame_receipts=[
+                FrameReceipt(status=Spec.STATUS_SUCCESS),
+                FrameReceipt(status=Spec.STATUS_SUCCESS),
+                FrameReceipt(status=Spec.STATUS_SUCCESS),
+                FrameReceipt(status=Spec.STATUS_FAILURE),
+                FrameReceipt(status=Spec.STATUS_SUCCESS),
+            ],
+        ),
+    )
+
+    state_test(
+        pre=pre,
+        tx=tx,
+        post={
+            sender: Account(nonce=1),
+            writer: Account(storage={0: 0}),
+            probe: Account(
+                storage={
+                    SLOT_BALANCE_GAS: warm_balance,
+                    SLOT_SLOAD_GAS: warm_sload,
+                    SLOT_CANARY: MARKER,
+                    TOUCHED_SLOT: MARKER,
+                }
+            ),
+        },
+    )
+
+
 def test_atomic_batch_unwinds_warmth(
     state_test: StateTestFiller,
     pre: Alloc,

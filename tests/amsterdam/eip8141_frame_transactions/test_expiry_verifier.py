@@ -14,6 +14,7 @@ from execution_testing import (
     Account,
     Alloc,
     Bytes,
+    EIPChecklist,
     Environment,
     Frame,
     FrameReceipt,
@@ -51,6 +52,10 @@ BLOCK_TIMESTAMP = 1_000
         ),
     ],
 )
+@EIPChecklist.SystemContract.Test.CallContexts.TxEntry()
+@EIPChecklist.SystemContract.Test.Deployment.Address()
+@EIPChecklist.SystemContract.Test.Inputs.Valid()
+@EIPChecklist.SystemContract.Test.Inputs.Boundary()
 def test_expiry_verifier_frame(
     state_test: StateTestFiller,
     pre: Alloc,

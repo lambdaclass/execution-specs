@@ -115,3 +115,45 @@ observable.
 | `test_code_bearing_sender_exemption_is_type_scoped` | Origin ban exemption | Same account, both types | Frame accepted, fee-market block rejected | ✅ |
 | `test_logs_concatenation` | Frame-ordered logs | Three loggers, middle reverts | Surviving logs in order | ✅ |
 | `test_deploy_then_use` | Cross-frame deployment | Factory frame then call frame | Hand-derived address executes | ✅ |
+| `test_block_gas_pool_returns_unused` | Unused gas returns to the pool | Follow-up tx sized to the remainder | Fits at the exact limit, not one below | ✅ |
+| `test_admission_constraints` | Rules needing block or account context | Maximum cost across the word bound | Reject, or accept within the bound | ✅ |
+| `test_atomic_batch_restores_prior_warmth` | Pre-batch journal restored on unroll | Probe frame before and after a failing batch | Both accesses measure warm afterwards | ✅ |
+| `test_invalid_tx_fields_transaction` | Same field bounds, transaction level | Transaction fixtures of the field arms | Same verdicts without a block | ✅ |
+| `test_frame_constraints_transaction` | Same frame rules, transaction level | Transaction fixtures of the frame arms | Same verdicts without a block | ✅ |
+| `test_expiry_verifier_constraints_transaction` | Same expiry rules, transaction level | Transaction fixtures of the expiry arms | Same verdicts without a block | ✅ |
+| `test_signature_constraints_transaction` | Same entry rules, transaction level | Transaction fixtures of the entry arms | Same verdicts without a block | ✅ |
+| `test_gas_limit_cap_from_frame_gas_transaction` | Same cap rule, transaction level | Transaction fixtures of the cap arms | Same verdicts without a block | ✅ |
+| `test_gas_limit_cap_from_calldata_floor_transaction` | Same floor cap rule, transaction level | Transaction fixtures of the floor arms | Same verdicts without a block | ✅ |
+| `test_payload_structure` | Payload field list | Raw payloads with wrong element counts | Decoder rejects each shape | ✅ |
+| `test_payload_field_encoding` | Payload field bounds | One field encoded out of range per arm | Decoder rejects each field | ✅ |
+| `test_frame_item_encoding` | Frame tuple field list | Raw frame items with wrong shapes | Decoder rejects each shape | ✅ |
+| `test_signature_item_encoding` | Signature tuple field list | Raw entry items with wrong shapes | Decoder rejects each shape | ✅ |
+| `test_precompile_target` | Precompile as a frame target | Frame targeting a precompile | Precompile runs, input-priced gas | ✅ |
+| `test_precompile_target_rejecting_its_input` | Precompile input rejection | Malformed precompile input | Frame halts, whole limit forfeited | ✅ |
+| `test_verify_frame_precompile_target` | VERIFY frame at a precompile | Precompile as the verify target | Default code runs and reverts | ✅ |
+| `test_delegated_target_entry_charge` | Designation access at entry | Delegated target, warm and cold | Both accesses charged at entry | ✅ |
+| `test_dead_target_entry_charge` | Reviving a dead target | Value transfer to a non-alive target | New-account state gas at entry | ✅ |
+| `test_delegated_to_precompile_target` | Designation to a precompile | Target designating a precompile | Designation disables dispatch | ✅ |
+| `test_verify_frame_delegated_to_precompile_target` | VERIFY frame designating a precompile | Delegated verify target | Empty resolved code, no default code | ✅ |
+| `test_bal_atomic_batch_write` | BAL entry of a batch write | Committed and unrolled batches | Write recorded only when it commits | ✅ |
+| `test_bal_atomic_batch_skipped_frame_absent` | BAL omits skipped frames | Failed batch with a skipped member | Skipped target absent from the BAL | ✅ |
+| `test_bal_frame_revert_write_dropped` | BAL entry of a reverted write | Reverting non-batch frame | Slot re-filed as a bare access | ✅ |
+| `test_bal_unaffordable_designation_absent` | BAL omits unreached designations | Frame gas below the designation access | Designated address absent | ✅ |
+| `test_bal_sponsored_payer_and_sender` | BAL attribution when sponsored | Non-sender payer | Fee change and nonce bump on distinct accounts | ✅ |
+| `test_expiry_verifier_from_initcode` | Predeploy called from initcode | `CREATE` in a frame, and a creating tx | Succeeds in both creation contexts | ✅ |
+| `test_framedatacopy_memory_bounds` | Copy size and offset bounds | Zero size at the max offset, huge sizes | No expansion, or halt on expansion | ✅ |
+| `test_introspection_gas_boundary` | Introspection gas requirement | Exact, one over, one under | Exact usage twice, halt below | ✅ |
+| `test_high_s_range_bound` | First `s` above the low-half bound | Half plus one, and above the order | Rejected on the range check | ✅ |
+| `test_refund_discarded_with_halt` | Refund lost to an exceptional halt | Clear then out-of-gas or invalid opcode | No refund term, whole limit charged | ✅ |
+| `test_refund_floored_by_calldata_cost` | Refund below the calldata floor | Data sized to straddle the floor | Floor is the final gas | ✅ |
+
+## Deliberately unpinned
+
+The fate of the `payer` and `sender_approved` approval fields when an
+atomic batch unrolls is unstated by the pinned spec — it says only
+that the *state* is rolled back to the condition before the batch —
+so no test here pins whether an approval granted inside a failing
+batch survives its unroll. `SPEC_FEEDBACK.md` records the question
+(R-101/R-106/R-161); the adjacent, settled half of the rule — that
+the shared warm journal is restored rather than emptied — is pinned
+by `test_atomic_batch_restores_prior_warmth`.

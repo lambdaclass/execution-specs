@@ -15,6 +15,7 @@ from execution_testing import (
     Account,
     Alloc,
     Bytes,
+    EIPChecklist,
     Environment,
     Fork,
     FrameReceipt,
@@ -23,6 +24,10 @@ from execution_testing import (
     Transaction,
     TransactionException,
     TransactionReceipt,
+    compute_create_address,
+)
+from execution_testing import (
+    Macros as Om,
 )
 
 from .helpers import default_frame, sender_frame, verify_frame
@@ -80,6 +85,11 @@ EXPIRY_SUCCESS_EXECUTION_GAS = 21 + 30
         ),
     ],
 )
+@EIPChecklist.SystemContract.Test.Inputs.Invalid()
+@EIPChecklist.SystemContract.Test.Inputs.Invalid.Checks()
+@EIPChecklist.SystemContract.Test.InputLengths.Static.Correct()
+@EIPChecklist.SystemContract.Test.InputLengths.Static.TooShort()
+@EIPChecklist.SystemContract.Test.InputLengths.Static.TooLong()
 def test_expiry_runtime_length_check(
     state_test: StateTestFiller,
     pre: Alloc,
@@ -135,6 +145,11 @@ def test_expiry_runtime_length_check(
         pytest.param(Op.STATICCALL, id="staticcall"),
     ],
 )
+@EIPChecklist.SystemContract.Test.CallContexts.Normal()
+@EIPChecklist.SystemContract.Test.CallContexts.Delegate()
+@EIPChecklist.SystemContract.Test.CallContexts.Static()
+@EIPChecklist.SystemContract.Test.CallContexts.Callcode()
+@EIPChecklist.SystemContract.Test.Inputs.MaxValues()
 def test_expiry_verifier_from_child_call(
     state_test: StateTestFiller,
     pre: Alloc,
@@ -185,6 +200,7 @@ def test_expiry_verifier_from_child_call(
     )
 
 
+@EIPChecklist.SystemContract.Test.Inputs.AllZeros()
 def test_expiry_verifier_all_zero_deadline(
     state_test: StateTestFiller,
     pre: Alloc,
@@ -223,6 +239,7 @@ def test_expiry_verifier_all_zero_deadline(
     )
 
 
+@EIPChecklist.SystemContract.Test.ValueTransfer.NoFee()
 def test_expiry_verifier_receives_value_from_sender_frame(
     state_test: StateTestFiller,
     pre: Alloc,
@@ -267,6 +284,7 @@ def test_expiry_verifier_receives_value_from_sender_frame(
     )
 
 
+@EIPChecklist.SystemContract.Test.CallContexts.SetCode()
 def test_expiry_verifier_behind_delegation(
     state_test: StateTestFiller,
     pre: Alloc,
@@ -319,6 +337,8 @@ def test_expiry_verifier_behind_delegation(
         ),
     ],
 )
+@EIPChecklist.SystemContract.Test.GasUsage.Constant.Exact()
+@EIPChecklist.SystemContract.Test.GasUsage.Constant.Oog()
 def test_expiry_verifier_exact_gas(
     state_test: StateTestFiller,
     pre: Alloc,
@@ -365,4 +385,79 @@ def test_expiry_verifier_exact_gas(
         pre=pre,
         tx=tx,
         post={sender: Account(nonce=0 if error else 1)},
+    )
+
+
+VERIFIER_CALL_INITCODE = (
+    # The verifier reads the first eight calldata bytes as a
+    # big-endian deadline, so the word is left-aligned in memory.
+    Op.MSTORE(0, int.from_bytes(UNEXPIRED, "big") << 192)
+    + Op.SSTORE(
+        SLOT_RESULT,
+        Op.ADD(Op.CALL(Op.GAS, Spec.EXPIRY_VERIFIER, 0, 0, 8, 0, 0), 1),
+    )
+    + Op.STOP
+)
+"""
+Initcode calling the expiry verifier and recording the call's success
+flag plus one, so a successful call is distinguishable from a slot
+that was never written.
+"""
+
+
+@pytest.mark.parametrize(
+    "from_creating_transaction",
+    [
+        pytest.param(False, id="create_opcode_inside_frame"),
+        pytest.param(True, id="contract_creating_transaction"),
+    ],
+)
+@EIPChecklist.SystemContract.Test.CallContexts.Initcode.CREATE()
+@EIPChecklist.SystemContract.Test.CallContexts.Initcode.Tx()
+def test_expiry_verifier_from_initcode(
+    state_test: StateTestFiller,
+    pre: Alloc,
+    from_creating_transaction: bool,
+) -> None:
+    """
+    Call the expiry verifier from initcode — from a `CREATE` executed
+    inside a frame, and from a contract-creating transaction.
+
+    The verifier's runtime reads only its calldata and the block
+    timestamp, so an unexpired deadline succeeds in either creation
+    context; the created account keeps the recorded flag because the
+    initcode deploys empty code rather than reverting.
+    """
+    sender = pre.fund_eoa()
+
+    if from_creating_transaction:
+        created = compute_create_address(address=sender, nonce=sender.nonce)
+        tx = Transaction(
+            sender=sender,
+            to=None,
+            data=VERIFIER_CALL_INITCODE,
+            max_fee_per_gas=10,
+            max_priority_fee_per_gas=0,
+        )
+    else:
+        factory = pre.deploy_contract(
+            code=Om.MSTORE(VERIFIER_CALL_INITCODE, 0)
+            + Op.POP(Op.CREATE(0, 0, len(VERIFIER_CALL_INITCODE)))
+            + Op.STOP
+        )
+        created = compute_create_address(address=factory, nonce=1)
+        tx = Transaction(
+            sender=sender,
+            frames=[
+                verify_frame(),
+                default_frame(target=factory, gas_limit=PROBE_FRAME_GAS),
+            ],
+        )
+
+    state_test(
+        env=Environment(timestamp=BLOCK_TIMESTAMP),
+        pre=pre,
+        tx=tx,
+        # One more than the call's success flag.
+        post={created: Account(storage={SLOT_RESULT: 2})},
     )

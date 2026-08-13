@@ -31,6 +31,7 @@ from execution_testing import (
     Address,
     Alloc,
     Bytes,
+    EIPChecklist,
     Fork,
     Frame,
     FrameSignature,
@@ -168,6 +169,13 @@ sits exactly on the boundary of the rule and stays valid.
 
 
 @pytest.mark.parametrize("tx_overrides,error", TX_FIELD_CASES)
+@EIPChecklist.TransactionType.Test.IntrinsicValidity.MaxFee.MaxPriorityLowerThanMaxFee()
+@EIPChecklist.TransactionType.Test.IntrinsicValidity.MaxFee.MaxPriorityEqualToMaxFee()
+@EIPChecklist.TransactionType.Test.Encoding.ListField.Zero()
+@EIPChecklist.TransactionType.Test.Encoding.ListField.Max()
+@EIPChecklist.TransactionType.Test.Encoding.ListField.MaxPlusOne()
+@EIPChecklist.TransactionType.Test.OutOfBounds.Max()
+@EIPChecklist.TransactionType.Test.OutOfBounds.MaxPlusOne()
 def test_invalid_tx_fields(
     state_test: StateTestFiller,
     pre: Alloc,
@@ -496,6 +504,7 @@ nearest-valid counterpart of a rejected case.
 
 
 @pytest.mark.parametrize("frames,error", EXPIRY_VERIFIER_CASES)
+@EIPChecklist.SystemContract.Test.InputLengths.Zero()
 def test_expiry_verifier_constraints(
     state_test: StateTestFiller,
     pre: Alloc,
@@ -851,6 +860,12 @@ nearest-valid counterpart of a rejected case.
 
 
 @pytest.mark.parametrize("entries,error", SIGNATURE_CASES)
+@EIPChecklist.TransactionType.Test.Signature.Invalid.V.Two()
+@EIPChecklist.TransactionType.Test.Signature.Invalid.V.TwentySeven()
+@EIPChecklist.TransactionType.Test.Signature.Invalid.R.Zero()
+@EIPChecklist.TransactionType.Test.Signature.Invalid.R.Secp256k1n()
+@EIPChecklist.TransactionType.Test.Signature.Invalid.S.Zero()
+@EIPChecklist.TransactionType.Test.Signature.Invalid.S.Complement()
 def test_signature_constraints(
     state_test: StateTestFiller,
     pre: Alloc,
@@ -944,6 +959,8 @@ limit, with the exception the excess must be rejected with.
 
 
 @pytest.mark.parametrize("cap_excess,error", FRAME_GAS_CAP_CASES)
+@EIPChecklist.TransactionType.Test.BlockInteractions.Eip7825.Valid()
+@EIPChecklist.TransactionType.Test.BlockInteractions.Eip7825.Invalid()
 def test_gas_limit_cap_from_frame_gas(
     state_test: StateTestFiller,
     pre: Alloc,

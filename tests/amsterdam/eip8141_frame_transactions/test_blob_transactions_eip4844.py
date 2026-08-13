@@ -14,6 +14,7 @@ from execution_testing import (
     Account,
     Alloc,
     Bytes,
+    EIPChecklist,
     Environment,
     Fork,
     Hash,
@@ -212,6 +213,7 @@ def test_blob_fee_settlement(
     )
 
 
+@EIPChecklist.TransactionType.Test.TxScopedAttributes.Persistent.Throughout()
 def test_blobhash_across_frames(
     state_test: StateTestFiller,
     pre: Alloc,

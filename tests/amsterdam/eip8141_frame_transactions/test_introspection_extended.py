@@ -18,6 +18,7 @@ from execution_testing import (
     Bytecode,
     Bytes,
     CodeGasMeasure,
+    EIPChecklist,
     Fork,
     Frame,
     FrameReceipt,
@@ -89,6 +90,7 @@ FUTURE_FRAME_DATA = Bytes(b"\x5a" * 32)
         ),
     ],
 )
+@EIPChecklist.Opcode.Test.GasUsage.Normal()
 def test_introspection_gas_costs(
     state_test: StateTestFiller,
     pre: Alloc,
@@ -137,6 +139,13 @@ def test_introspection_gas_costs(
         pytest.param(64, id="two_words"),
     ],
 )
+@EIPChecklist.Opcode.Test.GasUsage.MemoryExpansion()
+@EIPChecklist.Opcode.Test.MemExp.ZeroBytesZeroOffset()
+@EIPChecklist.Opcode.Test.MemExp.SingleByte()
+@EIPChecklist.Opcode.Test.MemExp.ThirtyOneBytes()
+@EIPChecklist.Opcode.Test.MemExp.ThirtyTwoBytes()
+@EIPChecklist.Opcode.Test.MemExp.ThirtyThreeBytes()
+@EIPChecklist.Opcode.Test.MemExp.SixtyFourBytes()
 def test_framedatacopy_gas(
     state_test: StateTestFiller,
     pre: Alloc,
@@ -187,6 +196,8 @@ def test_framedatacopy_gas(
     )
 
 
+@EIPChecklist.Opcode.Test.GasUsage.OutOfGasMemory()
+@EIPChecklist.Opcode.Test.MemExp.TwoThirtyTwoBytes()
 def test_framedatacopy_huge_length_out_of_gas(
     state_test: StateTestFiller,
     pre: Alloc,
@@ -228,6 +239,137 @@ def test_framedatacopy_huge_length_out_of_gas(
 
 
 @pytest.mark.parametrize(
+    "dest_offset,size,copies",
+    [
+        pytest.param(2**256 - 1, 0, True, id="zero_size_at_max_offset"),
+        pytest.param(0, 2**32 - 1, False, id="size_2_32_minus_one"),
+        pytest.param(0, 2**64 - 1, False, id="size_2_64_minus_one"),
+        pytest.param(0, 2**64, False, id="size_2_64"),
+        pytest.param(0, 2**256 - 1, False, id="size_max_word"),
+    ],
+)
+@EIPChecklist.Opcode.Test.MemExp.ZeroBytesMaxOffset()
+@EIPChecklist.Opcode.Test.MemExp.TwoThirtyTwoMinusOneBytes()
+@EIPChecklist.Opcode.Test.MemExp.TwoSixtyFourMinusOneBytes()
+@EIPChecklist.Opcode.Test.MemExp.TwoSixtyFourBytes()
+@EIPChecklist.Opcode.Test.MemExp.TwoTwoFiftySixMinusOneBytes()
+def test_framedatacopy_memory_bounds(
+    state_test: StateTestFiller,
+    pre: Alloc,
+    dest_offset: int,
+    size: int,
+    copies: bool,
+) -> None:
+    """
+    Sweep the frame data copy's memory bounds: a zero size expands
+    nothing even at the maximum destination offset, while every size
+    from `2**32-1` upwards prices an expansion beyond any reachable
+    gas and halts the frame.
+
+    The marker is written after the copy, so it stands only if the
+    copy returned; the halting arms forfeit the frame's whole limit,
+    which the receipt pins.
+    """
+    sender = pre.fund_eoa()
+    probe = pre.deploy_contract(
+        code=Op.FRAMEDATACOPY(dest_offset, 0, size, 1)
+        + Op.SSTORE(SLOT_RESULT, MARKER)
+        + Op.STOP
+    )
+
+    tx = Transaction(
+        sender=sender,
+        frames=[
+            verify_frame(),
+            default_frame(target=probe, gas_limit=PROBE_FRAME_GAS),
+        ],
+        expected_receipt=TransactionReceipt(
+            payer=sender,
+            frame_receipts=[
+                FrameReceipt(status=Spec.STATUS_SUCCESS),
+                FrameReceipt(status=Spec.STATUS_SUCCESS)
+                if copies
+                else FrameReceipt(
+                    status=Spec.STATUS_FAILURE, gas_used=PROBE_FRAME_GAS
+                ),
+            ],
+        ),
+    )
+
+    state_test(
+        pre=pre,
+        tx=tx,
+        post={probe: Account(storage={SLOT_RESULT: MARKER if copies else 0})},
+    )
+
+
+GAS_BOUNDARY_CODE = Op.POP(Op.TXPARAM(Spec.TXPARAM_FRAME_INDEX)) + Op.STOP
+"""
+Branch-free probe whose whole cost is the operand push, the
+introspection read and the pop, so a frame running it has a single
+exact gas requirement on top of its target's access.
+"""
+
+
+@pytest.mark.parametrize(
+    "gas_delta,succeeds",
+    [
+        pytest.param(0, True, id="exact_gas"),
+        pytest.param(1, True, id="one_gas_over"),
+        pytest.param(-1, False, id="one_gas_under"),
+    ],
+)
+@EIPChecklist.Opcode.Test.GasUsage.ExtraGas()
+@EIPChecklist.Opcode.Test.GasUsage.OutOfGasExecution()
+def test_introspection_gas_boundary(
+    state_test: StateTestFiller,
+    pre: Alloc,
+    fork: Fork,
+    gas_delta: int,
+    succeeds: bool,
+) -> None:
+    """
+    Budget a frame reading `TXPARAM` with exactly the gas its code
+    requires, one more, and one less.
+
+    The requirement is the cold account access charged for the frame's
+    target at entry plus the probe's own cost; a frame given one unit
+    more still reports the exact requirement as used, and one unit
+    less halts and forfeits the whole budget.
+    """
+    sender = pre.fund_eoa()
+    probe = pre.deploy_contract(code=GAS_BOUNDARY_CODE)
+    entry_charge = fork.gas_costs().COLD_ACCOUNT_ACCESS
+    required = entry_charge + GAS_BOUNDARY_CODE.gas_cost(fork)
+    frame_gas = required + gas_delta
+    status = Spec.STATUS_SUCCESS if succeeds else Spec.STATUS_FAILURE
+
+    tx = Transaction(
+        sender=sender,
+        frames=[
+            verify_frame(),
+            default_frame(target=probe, gas_limit=frame_gas),
+        ],
+        expected_receipt=TransactionReceipt(
+            payer=sender,
+            frame_receipts=[
+                FrameReceipt(status=Spec.STATUS_SUCCESS),
+                FrameReceipt(
+                    status=status,
+                    gas_used=required if succeeds else frame_gas,
+                ),
+            ],
+        ),
+    )
+
+    state_test(
+        pre=pre,
+        tx=tx,
+        post={sender: Account(nonce=1)},
+    )
+
+
+@pytest.mark.parametrize(
     "offset,expected",
     [
         pytest.param(
@@ -238,6 +380,7 @@ def test_framedatacopy_huge_length_out_of_gas(
         pytest.param(2**256 - 1, 1, id="max_offset_reads_zero"),
     ],
 )
+@EIPChecklist.Opcode.Test.OutOfBounds.Verify.Max()
 def test_framedataload_future_frame_and_max_offset(
     state_test: StateTestFiller,
     pre: Alloc,
@@ -288,6 +431,7 @@ def test_framedataload_future_frame_and_max_offset(
         pytest.param(Op.PUSH1(0) + Op.PUSH1(0) + Op.APPROVE, id="approve"),
     ],
 )
+@EIPChecklist.Opcode.Test.StackUnderflow()
 def test_introspection_stack_underflow(
     state_test: StateTestFiller,
     pre: Alloc,
@@ -327,6 +471,10 @@ def test_introspection_stack_underflow(
         pytest.param(Op.STATICCALL, id="staticcall"),
     ],
 )
+@EIPChecklist.Opcode.Test.ExecutionContext.Call()
+@EIPChecklist.Opcode.Test.ExecutionContext.Staticcall()
+@EIPChecklist.Opcode.Test.ExecutionContext.Delegatecall()
+@EIPChecklist.Opcode.Test.ExecutionContext.Callcode()
 def test_introspection_in_subcontexts(
     state_test: StateTestFiller,
     pre: Alloc,
@@ -380,6 +528,8 @@ def test_introspection_in_subcontexts(
     )
 
 
+@EIPChecklist.Opcode.Test.ExecutionContext.Initcode.Behavior()
+@EIPChecklist.Opcode.Test.ExecutionContext.Initcode.Behavior.Opcode()
 def test_introspection_in_initcode(
     state_test: StateTestFiller,
     pre: Alloc,
