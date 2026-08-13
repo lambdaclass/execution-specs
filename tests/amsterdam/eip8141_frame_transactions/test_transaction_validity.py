@@ -245,7 +245,10 @@ OVERFLOW_MAX_GAS = 2**24
         ),
         pytest.param(
             2**232,
-            TransactionException.TYPE_6_INVALID_FRAME_FORMAT,
+            # The merged EIP-8141 enforces this bound as
+            # `MaxCostOverflowError`, mapped to the gas-limit/price product
+            # overflow the pre-existing transaction types already report.
+            TransactionException.GASLIMIT_PRICE_PRODUCT_OVERFLOW,
             id="max_cost_at_overflow",
             marks=pytest.mark.exception_test,
         ),

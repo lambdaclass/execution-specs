@@ -10,9 +10,8 @@ https://eips.ethereum.org/EIPS/eip-8141
 from dataclasses import replace
 from typing import Callable, Dict, List, Mapping, Sequence
 
-from execution_testing.vm import OpcodeBase, Opcodes
-
 from execution_testing.base_types import Bytes
+from execution_testing.vm import OpcodeBase, Opcodes
 
 from ....base_fork import (
     BaseFork,

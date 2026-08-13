@@ -206,8 +206,6 @@ class InvalidFrameError(InvalidTransaction):
     """  # noqa: E501
 
 
-
-
 class FrameTransactionExecutionError(InvalidTransaction):
     """
     A frame transaction violated a validity rule that is only checkable
