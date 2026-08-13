@@ -161,13 +161,12 @@ def test_reference_intrinsic_gas_boundary(
 
     - `reference_count == 0` still pays a calldata term, because
       `rlp([])` is the single byte `0xc0` — the zero arm's accepted limit
-      is short by that much and by nothing else (R-078, R-080);
+      is short by that much and by nothing else;
     - the address charge appears once, not once per reference: the step
-      from one reference to two is a per-reference charge alone (R-009,
-      R-079);
+      from one reference to two is a per-reference charge alone;
     - the calldata term counts tokens, not bytes: the zero-heavy profile
       is charged roughly a third of the non-zero profile for a list of
-      almost the same length (R-081, R-155).
+      almost the same length.
     """
     sender = approving_sender(pre)
     references = [
@@ -290,7 +289,7 @@ def test_duplicate_references_are_charged_independently(
     charge does not follow it, because duplicate references are
     "checked, charged, and preserved independently". So the per-reference
     term is counted over the declared list and not over the keys it
-    resolves to (R-074, R-075, R-079).
+    resolves to.
 
     Every other fixture that pins a reference charge declares references
     that differ, where the two counts coincide and a charge taken over

@@ -13,8 +13,8 @@ that read produces a different block access list — which is committed to
 in the header, so the two readings give different block hashes. At least
 one client records the read. The negative arm below therefore pins the
 literal reading of the sentence, and is the one assertion in this suite
-whose expected value should be re-checked if EIP-8272 ever says what it
-means here; see `SPEC_FEEDBACK.md`.
+whose expected value should be re-checked if EIP-8272 ever states which
+reading it intends.
 """
 
 from typing import List
