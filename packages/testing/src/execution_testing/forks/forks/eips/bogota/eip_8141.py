@@ -59,6 +59,11 @@ class EIP8141(BaseFork):
         )
 
     @classmethod
+    def frame_txparam_undefined_selector(cls) -> int:
+        """EIP-8141 defines `0x00` through `0x0B`, so `0x0C` is free."""
+        return 0x0C
+
+    @classmethod
     def _frame_transaction_charged_bytes(
         cls,
         frames: Sequence[FrameGasInfo],
