@@ -62,7 +62,8 @@ def test_manager_as_tx_entry_point(
     fork: Fork,
 ) -> None:
     """
-    Pin R-003 and R-011 at the transaction entry point.
+    Pin the revert at the transaction entry point and the code's exact
+    cost.
 
     A transaction whose `to` is the manager is the one call context no
     contract can construct, and the EIP grants it no exemption: the code
@@ -120,7 +121,7 @@ def test_manager_as_frame_target(
     fork: Fork,
 ) -> None:
     """
-    Pin R-003, R-011 and R-037 for a frame that targets the manager.
+    Pin the revert for a frame target beside a successful protocol consume.
 
     A `DEFAULT` frame pointed at the manager is the closest a transaction
     can get to writing keyed nonce state through the manager's own code,
@@ -131,7 +132,7 @@ def test_manager_as_frame_target(
     balance stays zero.
 
     The frame carries no value because EIP-8141 permits value transfer
-    only from a `SENDER` frame; the value-is-returned half of R-011 is
+    only from a `SENDER` frame; the value-is-returned half of the rule is
     pinned at the transaction entry point above, where a top-level call
     can carry wei.
 
@@ -202,7 +203,8 @@ def test_postfork_force_send_balance_inert(
     pre: Alloc,
 ) -> None:
     """
-    Pin R-011 and R-098: a forced balance is unrecoverable and inert.
+    Pin that a force-sent balance is unrecoverable and does not perturb
+    keyed state.
 
     `SELFDESTRUCT` is the one way to move wei to an account that reverts on
     every call, so after it the manager holds a balance with no spender.

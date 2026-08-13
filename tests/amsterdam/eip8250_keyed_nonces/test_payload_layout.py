@@ -144,8 +144,8 @@ def test_full_field_payload_layout_vector(
     pre: Alloc,
 ) -> None:
     """
-    Pin R-014, R-015 and R-016 against a transaction that defaults nothing
-    it can legally populate.
+    Pin the whole ten-field schema and the frame layout with nothing left
+    at a default.
 
     Eight of the ten payload fields, and every subfield of the frames inside
     them, carry a distinct value: two keys of different widths, an eight-byte
@@ -260,9 +260,7 @@ def test_nonce_field_position_swap_rejected(
     pre: Alloc,
 ) -> None:
     """
-    Pin the positional half of R-014: `nonce_seq` sits at payload index 2,
-    where EIP-8141's `nonce` used to be, and not wherever a field of the same
-    RLP shape happens to fit.
+    Prove `nonce_seq` is read at payload index 2.
 
     Ten integer-or-list fields give a decoder no way to notice that two of
     them were transposed, unless one position admits a value the other

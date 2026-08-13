@@ -126,7 +126,7 @@ def test_mixed_transaction_types_share_block(
     pre: Alloc,
 ) -> None:
     """
-    Pin R-085.
+    Prove non-frame types are unaffected.
 
     Legacy account objects and non-frame transaction types are unchanged by
     this EIP, so a plain transaction, a keyed frame transaction, and a
@@ -215,7 +215,7 @@ def test_keyed_validity_independent_of_legacy_nonce_advance(
     pre: Alloc,
 ) -> None:
     """
-    Pin R-092, R-093, and R-094.
+    Defeat the legacy-nonce cancellation strategy.
 
     A non-zero-key frame transaction does not advance the sender's legacy
     account nonce, and conversely a transaction that advances that nonce
@@ -297,16 +297,15 @@ def test_sole_transaction_gas_allowance_boundary(
     valid: bool,
 ) -> None:
     """
-    Pin R-021 and R-023 at the block boundary for a block's only
-    transaction: the gas the block must supply is the transaction's own
-    inclusion anchor, `nonce_calldata` included.
+    Locate the block-gas threshold for a block's only transaction at its
+    inclusion anchor.
 
     A frame transaction has no `gas_limit` field, so the checklist's
     "`tx.gas_limit == block.gas_limit`" pair is expressed against the
     quantity that field stands in for -- the derived anchor
     `max(standard_gas_limit, calldata_floor_gas)` that EIP-8141 requires the
-    block to be able to supply, and into which R-021 adds
-    `nonce_calldata_cost` and R-023 leaves every surrounding definition
+    block to be able to supply, and into which the EIP adds
+    `nonce_calldata_cost` while leaving every surrounding definition
     unchanged.
 
     The two arms are the exact boundary pair. `shortfall` of zero gives the
@@ -363,9 +362,8 @@ def test_last_transaction_gas_allowance_boundary(
     valid: bool,
 ) -> None:
     """
-    Pin R-021 and R-023 at the block boundary for the last transaction of a
-    block: what the closing transaction must fit into is what the block has
-    left after the opening one, not the block limit itself.
+    Locate the same threshold for a closing transaction against the block's
+    remainder.
 
     Two keyed transactions from two senders share one block. Each is built so
     that its `gas_used` equals its own inclusion anchor -- one fresh key, and

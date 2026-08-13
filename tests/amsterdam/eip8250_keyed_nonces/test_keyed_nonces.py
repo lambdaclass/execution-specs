@@ -46,7 +46,7 @@ def test_first_use_consumes_key_set(
     nonce_keys: list[int],
 ) -> None:
     """
-    Pin R-036, R-044, R-052, R-053, R-059, and R-092.
+    Pin first use of a fresh key set.
 
     Every absent slot starts at zero, so expected storage is hand-derived as
     nonce_seq+1=1 and gas as 20,000 times the enumerated key count.
@@ -109,7 +109,7 @@ def test_legacy_zero_alias_never_manager_slot(
     initial_nonce: int,
 ) -> None:
     """
-    Pin R-032, R-035, and the `nonce_keys == [0]` branch of R-044.
+    Pin the key-zero alias.
 
     Expected sender nonce is the supplied legacy nonce plus one; the manager
     remains empty because the zero-key branch is selected before slot hashing.
@@ -155,7 +155,7 @@ def test_subsequent_key_increment_has_zero_surcharge(
     pre: Alloc,
 ) -> None:
     """
-    Pin R-036, R-044, R-052, and R-092.
+    Prove only absent slots are surcharged.
 
     Pre-seeded value 4 advances to the independently computed value 5, while a
     zero-gas frame proves that only absent (zero-valued) slots are surcharged.
@@ -216,7 +216,7 @@ def test_highest_keyed_sequence_becomes_exhausted(
     pre: Alloc,
 ) -> None:
     """
-    Pin R-044, R-049, and R-097.
+    Pin the final permitted advance.
 
     The seeded value MAX-1 advances by literal addition to MAX, independently
     exercising the final permitted transition into the exhausted state.
@@ -279,7 +279,7 @@ def test_first_use_surcharge_one_key_gas_triptych(
     success: bool,
 ) -> None:
     """
-    Pin R-004, R-052, R-053, and R-059.
+    Boundary the one-key surcharge.
 
     The three gas limits are literal 20,000 minus one, equal, and plus one;
     equality succeeds and writes nonce_seq+1, while the lower case writes none.
@@ -354,7 +354,7 @@ def test_first_use_surcharge_sixteen_key_aggregate(
     success: bool,
 ) -> None:
     """
-    Pin R-006, R-052, R-053, R-056, and R-059.
+    Boundary the aggregate surcharge.
 
     Sixteen absent reads require the hand product 16*20,000=320,000. The
     one-below case checks that the aggregate transition leaves every slot zero.
@@ -436,7 +436,7 @@ def test_keyed_sequence_mismatch(
     error: TransactionException,
 ) -> None:
     """
-    Pin R-035 and R-040.
+    Pin the per-key sequence equality.
 
     The expected high/low error is obtained by directly comparing tx sequence
     one with the hand-seeded current values zero and two before any frame runs.
@@ -498,7 +498,7 @@ def test_keyset_requires_one_shared_sequence(
     error: TransactionException | None,
 ) -> None:
     """
-    Pin R-040 and R-088.
+    Prove every selected key must match.
 
     The expected validity is re-derived by comparing scalar 4 independently
     against both hand-seeded slots; success writes scalar+1 to both domains.
@@ -540,7 +540,7 @@ def test_payment_approval_consumes_only_once(
     pre: Alloc,
 ) -> None:
     """
-    Pin R-045 and R-046.
+    Pin exactly-once consumption.
 
     Receipt statuses are hand-enumerated success/success/failure; only the
     first payer transition writes nonce_seq+1, so the final slot equals one.
@@ -608,13 +608,13 @@ def test_refused_payment_approval_leaves_key_unconsumed(
     pre: Alloc,
 ) -> None:
     """
-    Pin R-050 and R-056 from the failing side of the approval transition.
+    Pin that a refused payment approval consumes nothing.
 
     `test_payment_approval_consumes_only_once` covers a second payment
     approval refused *after* a successful one. This covers the opposite
     order: the first payment-scoped `APPROVE` is refused, and a later one
-    succeeds. R-050 requires clients to apply every EIP-8141 `APPROVE`
-    exceptional-condition check before the keyed-nonce steps, and R-056
+    succeeds. The EIP requires clients to apply every EIP-8141 `APPROVE`
+    exceptional-condition check before the keyed-nonce steps, and
     makes steps 3 through 5 a single transition, so when the approval does
     not complete no approval effect occurs at all.
 
@@ -625,8 +625,8 @@ def test_refused_payment_approval_leaves_key_unconsumed(
     approval; no arithmetic beyond that inequality is needed.
 
     The discriminating expectation is the third frame's `gas_used`. Its
-    approval is the first one that completes, so R-051 reads an absent slot,
-    `first_use_count` is one, and R-053 deducts exactly one
+    approval is the first one that completes, so the read finds an absent
+    slot, `first_use_count` is one, and the EIP deducts exactly one
     `KEYED_NONCE_FIRST_USE_GAS` from that frame. Had the refused approval
     consumed the key, the slot would already hold a non-zero value, the
     surcharge would be zero, and this frame would report zero gas while still
@@ -720,7 +720,7 @@ def test_approval_survives_later_frame_revert(
     pre: Alloc,
 ) -> None:
     """
-    Pin R-057 and R-058.
+    Pin durability against a later revert.
 
     The hard-coded post-state keeps nonce_seq+1 after a later REVERT, directly
     re-deriving the EIP's outer-journal rule rather than using a state helper.
@@ -775,7 +775,7 @@ def test_approval_survives_revert_of_approving_frame(
     pre: Alloc,
 ) -> None:
     """
-    Pin R-057 and R-058.
+    Pin durability against the approving frame's own revert.
 
     A DELEGATECALL reaches APPROVE before the enclosing REVERT; the expected
     slot one and payer effects follow the outer approval journal explicitly.
@@ -852,7 +852,7 @@ def test_protocol_bookkeeping_remains_cold_unmetered(
     expected_sender_nonce: int,
 ) -> None:
     """
-    Pin R-060.
+    Prove bookkeeping does not warm the manager.
 
     The expected 6,005 gas is hand-summed from target entry and opcode costs:
     3,000 frame entry, 3 for the PUSH20, the full cold 3,000 manager access
@@ -913,7 +913,7 @@ def test_approval_survives_failed_atomic_batch(
     pre: Alloc,
 ) -> None:
     """
-    Pin R-057 and R-058 against an atomic-batch restore.
+    Pin durability against a batch rollback.
 
     Expected batch receipts are enumerated success/success/failure/skipped.
     The final frame has status 2 and no state effect because the preceding
@@ -992,7 +992,7 @@ def test_payment_approval_preserves_transiently_funded_payer(
     pre: Alloc,
 ) -> None:
     """
-    Pin R-055, R-057, and R-058.
+    Pin paymaster payment.
 
     The payer balance is independently computed as the transient 10**18 credit
     minus the hand-summed 47,284 gas at the fixed price of seven wei.
@@ -1085,7 +1085,7 @@ def test_execution_only_approval_reverts_outside_payment_scope(
     pre: Alloc,
 ) -> None:
     """
-    Pin R-046 and R-057.
+    Prove execution-only approval is not payment.
 
     Two delegate calls separate execution-only from payment approval; after the
     frame REVERT, the missing durable execution approval makes the tx invalid.
@@ -1133,7 +1133,7 @@ def test_key_zero_preserves_live_nonce_across_batch_rollback(
     pre: Alloc,
 ) -> None:
     """
-    Pin R-044, R-047, R-057, and R-058.
+    Pin that the approval's nonce effect outlives an atomic-batch rollback.
 
     Starting nonce one is incremented by CREATE to two and by approval to
     three; the latter is retained outside the later batch rollback snapshot.
@@ -1196,7 +1196,7 @@ def test_key_zero_approval_rejects_live_nonce_overflow(
     pre: Alloc,
 ) -> None:
     """
-    Pin R-048.
+    Pin key-zero overflow.
 
     MAX-1 plus the earlier CREATE equals MAX; another hand-computed increment
     would exceed the uint64 bound, so approval must fail without effects.
@@ -1245,18 +1245,19 @@ def test_key_zero_approval_increments_live_nonce_not_sequence(
     create_count: int,
 ) -> None:
     """
-    Pin R-044 (the `nonce_keys == [0]` branch) and R-047.
+    Pin that key-zero approval increments the *live* account nonce rather
+    than assigning `nonce_seq+1`.
 
-    R-047: "increments the sender's current account nonce; it does not set
+    The EIP: "increments the sender's current account nonce; it does not set
     the account nonce to `tx.nonce_seq + 1`". Stateful validity forces
     `nonce_seq` to equal the account nonce at transaction start, so the two
     readings only diverge once an earlier frame has already moved the live
-    nonce -- the case R-047 names explicitly ("by executing `CREATE` or
+    nonce -- the case the EIP names explicitly ("by executing `CREATE` or
     `CREATE2` at `tx.sender`").
 
     Frame zero runs `create_count` CREATEs at the sender, taking the live
     nonce from one to `1 + create_count`; frame one takes the payment
-    approval. Hand-derived expectation, straight from R-047's wording:
+    approval. Hand-derived expectation, straight from the EIP's wording:
     final nonce = `1 + create_count + 1`. An implementation assigning
     `tx.nonce_seq + 1` yields two for every arm, so the arms disagree with
     it by one, two and three respectively.

@@ -59,7 +59,7 @@ DISCRIMINATED_KEYS = [1, 2**256 - 1]
 
 # Pre-seeded storage on the contract sender. Its only job is to prove the
 # sender's storage is really being compared: without it, an absent account
-# would read zero at every slot and the "not on the sender" half of R-033
+# would read zero at every slot and the "not on the sender" half of the rule
 # would hold vacuously.
 SENDER_SENTINEL_SLOT = 0xC0
 SENDER_SENTINEL_VALUE = 0xC0DE
@@ -70,7 +70,7 @@ def wrong_layout_slots(sender: Address, nonce_key: int) -> Dict[str, Hash]:
     """
     Return the slots a misderived `slot(sender, nonce_key)` would occupy.
 
-    R-034 fixes the preimage as `A || K` with `A = left_pad_32(sender)` and
+    The EIP fixes the preimage as `A || K` with `A = left_pad_32(sender)` and
     `K = uint256_to_bytes32(nonce_key)`. Each entry is one plausible
     misreading of that sentence: exchanging the two operands, padding the
     address on the wrong side, concatenating the twenty-byte address
@@ -114,8 +114,7 @@ def test_key_zero_domain_ignores_manager_slot_zero(
     error: TransactionException | None,
 ) -> None:
     """
-    Pin R-032 and the zero branch of R-044: for `nonce_keys == [0]` the
-    selected domain is `state[sender].nonce`, never `slot(sender, 0)`.
+    Prove `[0]` selects the account nonce and never `slot(sender, 0)`.
 
     `slot(sender, 0)` is seeded with 9 while the sender's account nonce is 4.
     The two expected outcomes are read straight off `current_nonce_seq`, whose
@@ -179,8 +178,7 @@ def test_keyed_consumption_writes_only_manager_storage(
     pre: Alloc,
 ) -> None:
     """
-    Pin the non-zero branch of R-044: the consumed slot lives in
-    `state[NONCE_MANAGER].storage`, not in the sender's own storage.
+    Prove the consumed slot lives in the manager, not on the sender.
 
     `slot(sender, nonce_key)` is a function of the sender, so an
     implementation that kept keyed sequences on the sender account would
@@ -232,7 +230,8 @@ def test_slot_preimage_order_discriminator(
     pre: Alloc,
 ) -> None:
     """
-    Pin R-033 and R-034 positionally: the exact slot, in the exact account.
+    Pin the slot preimage positionally, naming the layouts it is not
+    the account it lives in.
 
     `test_keyed_consumption_writes_only_manager_storage` above shows the
     write lands on `NONCE_MANAGER` rather than on the sender, and
@@ -245,15 +244,15 @@ def test_slot_preimage_order_discriminator(
     where it went instead.
 
     This test names the alternatives. `wrong_layout_slots` enumerates five
-    misderivations of R-034's `keccak256(left_pad_32(sender) ||
+    misderivations of the specified `keccak256(left_pad_32(sender) ||
     uint256_to_bytes32(nonce_key))` preimage, and each of the resulting
-    slots must read zero while the R-034 slot reads `nonce_seq + 1 == 1`.
+    slots must read zero while the specified slot reads `nonce_seq + 1 == 1`.
     Both directions are asserted for the narrowest key, 1, and the widest,
     `2**256 - 1`, and the slots are checked for pairwise distinctness first,
     so no arm can be satisfied by two derivations landing on one slot.
 
     The sender is a contract carrying pre-seeded storage, which is what
-    makes the R-033 half load-bearing. `slot(sender, nonce_key)` is a
+    makes the account half load-bearing. `slot(sender, nonce_key)` is a
     function of the sender alone, so an implementation keeping keyed
     sequences on the sender account would derive the same slot key; against
     the externally owned sender used elsewhere in this directory that is
@@ -261,7 +260,7 @@ def test_slot_preimage_order_discriminator(
     selected slots are asserted zero in the sender's own storage while the
     sentinel at slot `0xC0` still holds `0xC0DE`, so the comparison is
     against real storage and not against an absent account. The sender's
-    account nonce staying at one is the keyed half of R-043: payment
+    account nonce staying at one is the keyed half of the dispatch: payment
     approval writes manager slots and nothing else.
     """
     sender = pre.deploy_contract(
@@ -328,9 +327,11 @@ def test_payment_approval_nonce_effect_follows_selected_domain(
     pre: Alloc,
 ) -> None:
     """
-    Pin R-043: payment approval's nonce effect is dispatched on the domain.
+    Prove payment approval's nonce effect is dispatched on the selected
+    domain, i.e. the EIP-8141 increment is replaced rather than
+    supplemented.
 
-    R-043 replaces EIP-8141's unconditional sender-nonce increment with
+    The EIP replaces EIP-8141's unconditional sender-nonce increment with
     `consume_nonce_set`, so post-fork the increment must happen for
     `nonce_keys == [0]` and must not happen otherwise. One sender exercises
     both halves in one block, which is what makes the replacement itself

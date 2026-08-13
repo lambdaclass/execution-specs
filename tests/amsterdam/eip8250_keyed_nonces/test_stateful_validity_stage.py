@@ -65,8 +65,7 @@ def test_legacy_domain_tracks_preceding_transaction_in_block(
     error: TransactionException | None,
 ) -> None:
     """
-    Pin R-038: `tx_legacy_nonce` is the sender's account nonce as it stands at
-    the transaction's own position in the block, not at the block's start.
+    Prove `tx_legacy_nonce` is read at the transaction's block position.
 
     One block, one sender, two transactions. The first is an ordinary
     value-transfer transaction, which by ordinary EVM rules takes the sender's
@@ -180,8 +179,7 @@ def test_sequence_mismatch_precedes_all_frame_execution(
     error: TransactionException | None,
 ) -> None:
     """
-    Pin R-041: the sequence check runs before any frame executes, on both
-    selected domains.
+    Prove the sequence check precedes every frame on both domains.
 
     Every transaction here carries a second frame that calls a contract whose
     only job is to write a sentinel. On the arms whose sequence is exact, that

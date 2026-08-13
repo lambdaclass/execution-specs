@@ -26,7 +26,7 @@ def test_manager_direct_call_empty_revert(
     pre: Alloc,
 ) -> None:
     """
-    Pin R-003, R-011, R-037, and R-098.
+    Pin the manager's revert-only code.
 
     Bytecode 60 00 60 00 fd is manually decoded as REVERT(0,0). A caller
     records CALL, STATICCALL, and value-bearing CALL status and returndata
@@ -105,7 +105,7 @@ def test_keyed_nonce_txparams(
     pre: Alloc,
 ) -> None:
     """
-    Pin R-007--R-010, R-061, and R-063--R-067.
+    Pin the four new TXPARAM indices.
 
     Scalar returns are literal inputs and the key hash is a hard-coded Keccak
     vector over bytes32(2)||bytes32(1)||bytes32(2).
@@ -172,7 +172,7 @@ def test_legacy_nonce_snapshot_survives_key_zero_approval(
     pre: Alloc,
 ) -> None:
     """
-    Pin R-063, R-069, and R-070.
+    Pin the pre-state legacy nonce snapshot.
 
     The pre-frame nonce seven is hard-coded in both introspection slots, while
     the independently computed live post-approval account nonce is eight.

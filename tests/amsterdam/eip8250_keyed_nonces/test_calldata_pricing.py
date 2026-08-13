@@ -74,8 +74,7 @@ def test_nonce_calldata_priced_into_transaction_gas(
     encoded_nonce_calldata: str,
 ) -> None:
     """
-    Pin R-019 through R-021: `nonce_calldata` is `rlp(nonce_keys)` followed
-    by `rlp(nonce_seq)`, and its cost is added to `standard_gas_limit`.
+    Pin `nonce_calldata_cost` into `standard_gas_limit`.
 
     Every arm is in the standard regime -- asserted, not assumed -- so the
     transaction's gas is `standard_gas_limit` minus unused frame gas, and
@@ -172,9 +171,7 @@ def test_nonce_calldata_counted_in_floor_above_standard_cost(
     nonce_keys: List[int],
 ) -> None:
     """
-    Pin R-022 and R-023: `nonce_calldata` tokens are added to
-    `calldata_tokens`, so they raise the floor that `gas_used` is clamped
-    to when the floor exceeds the standard cost.
+    Pin `nonce_calldata_tokens` into `calldata_tokens`.
 
     The frame carries 512 bytes of data and only enough gas to cover the
     first-use surcharge, which puts `calldata_floor_gas` above
@@ -263,10 +260,8 @@ def test_calldata_floor_above_standard_cost_exceeds_gas_allowance(
     valid: bool,
 ) -> None:
     """
-    Pin R-022 and R-023 on the rejecting side: when the calldata floor
-    exceeds the standard cost the floor -- `nonce_calldata` included -- is
-    the amount of gas the block must be able to supply, so a block that can
-    only supply less rejects the transaction.
+    Pin the same two rules on the rejecting side: `nonce_calldata` in the
+    floor is what makes a transaction not fit.
 
     A frame transaction has no gas limit field, so the checklist's
     "gas_limit == intrinsic_gas_cost" case is expressed through the only

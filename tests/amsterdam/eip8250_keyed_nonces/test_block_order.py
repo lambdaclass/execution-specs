@@ -74,7 +74,7 @@ def test_block_order_overlap_and_disjoint_domains(
     scenario: str,
 ) -> None:
     """
-    Pin R-042 and R-087.
+    Pin per-position sequence evaluation.
 
     In the overlap case A writes keys 1/2 to one, making B's stale sequence
     zero invalid at its exact block position; an invalid block commits none of
@@ -120,7 +120,7 @@ def test_intra_block_chained_same_key(
     pre: Alloc,
 ) -> None:
     """
-    Pin R-042, R-036, and R-052 in the direction the overlap case leaves open.
+    Pin the valid direction of the same rule.
 
     `test_block_order_overlap_and_disjoint_domains` shows that a *stale*
     sequence on an overlapping key set is invalid; the same rule also says
@@ -131,13 +131,14 @@ def test_intra_block_chained_same_key(
 
     Both expectations are re-derived from the spec pseudocode rather than
     observed. At the first transaction's position the slot is absent, so
-    `current_nonce_seq` reads zero (R-036) and `nonce_seq == 0` satisfies
-    R-040; `consume_nonce_set` stores `0 + 1 == 1` (R-044). At the second
+    `current_nonce_seq` reads zero for an absent slot and `nonce_seq == 0`
+    satisfies the equality; `consume_nonce_set` stores `0 + 1 == 1`. At the
+    second
     transaction's position that same slot now reads one, so only
     `nonce_seq == 1` is valid there and the slot ends at `1 + 1 == 2`.
 
     The two frame gas limits are the discriminating part. `first_use_count`
-    counts slots whose pre-read value is zero (R-052), so it is one for the
+    counts slots whose pre-read value is zero, so it is one for the
     first transaction and zero for the second: the first approving frame is
     given exactly `KEYED_NONCE_FIRST_USE_GAS` and the second exactly zero. An
     implementation that re-charged the surcharge for an already-written slot,

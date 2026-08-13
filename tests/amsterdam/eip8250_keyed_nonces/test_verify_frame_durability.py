@@ -39,7 +39,7 @@ def test_verify_revert_unrolls_keyed_consumption(
     verify_frame_reverts: bool,
 ) -> None:
     """
-    Pin R-106 against R-057 and R-058.
+    Bound the durability rule.
 
     Keyed consumption is journaled outside the frame revert journal, so it
     survives a later ordinary frame revert and an atomic-batch restore. A

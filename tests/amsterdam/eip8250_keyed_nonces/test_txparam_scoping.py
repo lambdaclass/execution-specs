@@ -61,7 +61,7 @@ def test_undefined_txparam_index_halts(
     defined: bool,
 ) -> None:
     """
-    Pin R-062 and R-105.
+    Prove `0x0F` and `0x11` stay undefined.
 
     EIP-8141 assigns `TXPARAM` indices through `0x0B` and this EIP adds only
     `0x0C`, `0x0D`, `0x0E`, and `0x10`, so `0x0F` and `0x11` stay undefined
@@ -144,12 +144,13 @@ def test_inherited_signature_count_index_unchanged(
     pre: Alloc,
 ) -> None:
     """
-    Pin the other half of R-062: the four added indices are non-conflicting.
+    Prove the four added indices conflict with nothing.
 
     `test_undefined_txparam_index_halts` pins that the indices EIP-8250 does
-    not define stay undefined. R-062 also states that EIP-8141 assigns indices
-    through `0x0B`, including `0x0B = len(signatures)`, and that this EIP adds
-    its four indices without conflicting with them -- so `0x0B` must still
+    not define stay undefined. The EIP also states that EIP-8141 assigns
+    indices through `0x0B`, including `0x0B = len(signatures)`, and that
+    this EIP adds its four indices without conflicting with them -- so
+    `0x0B` must still
     report the signature count after activation. That direction was asserted
     nowhere; an earlier draft of this EIP placed `TXPARAM_NONCE_KEY_0` at
     `0x0B`, which is exactly the collision this pins against.
@@ -253,7 +254,7 @@ def test_txparam_values_are_transaction_scoped(
     pre: Alloc,
 ) -> None:
     """
-    Pin R-063, R-069, and R-070.
+    Prove the parameters never move mid-transaction.
 
     The five keyed-nonce parameters are transaction-scoped, so payment
     approval and a `CREATE` executed inside the transaction must not move
@@ -263,7 +264,7 @@ def test_txparam_values_are_transaction_scoped(
     zero is selected so that approval has already incremented the sender's
     account nonce from seven to eight before the probe runs, which makes
     `TXPARAM(0x0C)` return the pre-state seven rather than the live eight and
-    keeps R-070's `TXPARAM(0x01) == TXPARAM(0x0C)` equality observable. The
+    keeps the `TXPARAM(0x01) == TXPARAM(0x0C)` equality observable. The
     key-set hash is the hard-coded `[0]` vector, not a recomputation.
     """
     initial_nonce = 7

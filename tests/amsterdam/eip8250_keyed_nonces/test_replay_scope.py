@@ -83,8 +83,7 @@ def test_same_key_different_senders_are_independent(
     pre: Alloc,
 ) -> None:
     """
-    Pin the sender component of R-088, and R-036 for a key that is fresh for
-    one sender while consumed for another.
+    Pin the sender component of the replay triple.
 
     Both transactions select the same numeric key at the same sequence zero,
     so the only thing separating their replay domains is the sender. The
@@ -135,7 +134,7 @@ def test_consumed_slots_persist_and_replay_tuple_is_rejected(
     pre: Alloc,
 ) -> None:
     """
-    Pin R-087, R-095, and the tuple scoping of R-088 across blocks.
+    Pin cross-block persistence and replay by tuple rather than by hash.
 
     Three blocks from one sender. The first consumes keys 1 and 2 at sequence
     zero; the second consumes the disjoint key 3, also at sequence zero; the
@@ -148,10 +147,10 @@ def test_consumed_slots_persist_and_replay_tuple_is_rejected(
     transaction makes its block invalid, so nothing of the third block is
     applied. Key 3 was never written, so it still reads absent -- zero -- in
     the second block and is valid there at sequence zero and charged for a
-    first use, which is R-087's replay independence of disjoint key sets and
-    R-036's absent-reads-as-zero for a sender that already has consumed keys.
+    first use, which is the replay independence of disjoint key sets together
+    with absent-reads-as-zero for a sender that already has consumed keys.
     The final storage holds all three keys at 1: none was deleted or reset by
-    a later consumption or by the rejected block, which is R-095.
+    a later consumption or by the rejected block.
 
     The replayed transaction carries a priority fee of one wei where the
     original carried none. That leaves the replay tuple identical while giving

@@ -59,7 +59,7 @@ def test_key_set_introspection_at_maximum_count(
     pre: Alloc,
 ) -> None:
     """
-    Pin R-064 and R-067 at `len(nonce_keys) == MAX_NONCE_KEYS`.
+    Pin `0x0D` and `0x0E` at `MAX_NONCE_KEYS`.
 
     `TXPARAM(0x0D)` must report 16, the hand-counted length of the key set,
     and `TXPARAM(0x0E)` must report the hash of
@@ -170,10 +170,8 @@ def test_legacy_assumption_guard_admits_only_the_zero_key_alias(
     accepted: bool,
 ) -> None:
     """
-    Pin R-086: the guard the EIP prescribes for verifier code that predates
-    keyed nonces -- `TXPARAM(0x0D) == 1 and TXPARAM(0x10) == 0` -- must admit
-    exactly the transactions on which `TXPARAM(0x01)` is still the legacy
-    account nonce, and refuse every other key set.
+    Deploy the guard the EIP prescribes for pre-keyed verifier code and
+    show it discriminates.
 
     The rule is advice to contract authors, so the only way to pin it is to
     deploy the advice and show it works. The verifier here is that guard and
@@ -191,14 +189,14 @@ def test_legacy_assumption_guard_admits_only_the_zero_key_alias(
       the only one that can reject it, and it is the arm that isolates
       that conjunct: a client reporting a first key of zero for every key
       set would be admitted here and nowhere else in this test.
-    - `[1, 2]` is the multi-key refusal R-091 warns about, where an
+    - `[1, 2]` is the multi-key refusal the EIP warns about, where an
       attacker appends keys the verifier never authenticated. Both
       conjuncts fail on it, so it isolates neither; it is here because a
       guard demonstrated only against single-key sets leaves the case the
       security note actually names unstated.
 
     The count conjunct cannot be isolated at all, and that is a property of
-    the EIP rather than a gap in this test: R-031 rejects any key set that
+    the EIP rather than a gap in this test: the EIP rejects any key set that
     contains `0` alongside another key, so `TXPARAM(0x10) == 0` already
     implies the singleton `[0]` and `TXPARAM(0x0D) == 1` with it. No key set
     exists that satisfies the second conjunct and violates the first.

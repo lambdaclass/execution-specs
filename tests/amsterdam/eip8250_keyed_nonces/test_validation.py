@@ -52,7 +52,7 @@ def test_nonce_key_collection_bounds(
     error: TransactionException | None,
 ) -> None:
     """
-    Pin R-026, the `1 <= len(nonce_keys) <= MAX_NONCE_KEYS` bound.
+    Pin the 1..16 key-count bound.
 
     The cases are the direct 1..16 inclusive boundary at 0, 1, 16, and 17;
     valid controls receive exactly 20,000 gas per independently counted key.
@@ -113,7 +113,7 @@ def test_strict_numeric_order_and_zero_singleton(
     error: TransactionException | None,
 ) -> None:
     """
-    Pin R-030 and R-031.
+    Pin strict numeric ordering and the zero singleton.
 
     Cases are hand-enumerated numeric comparisons; [255,256] is the control
     that distinguishes integer order from variable-width byte-string order.
@@ -176,7 +176,8 @@ def test_strict_increase_position_sweep(
     error: TransactionException | None,
 ) -> None:
     """
-    Pin R-030 where the violation sits away from the opening pair of keys.
+    Pin strict increase where the violation sits away from the opening pair
+    the ordering rule.
 
     `test_strict_numeric_order_and_zero_singleton` above puts each of its
     violations in the only pair a two-key list has, so a comparison of just
@@ -193,7 +194,7 @@ def test_strict_increase_position_sweep(
     - `[256, 2]` is the reject-direction counterpart of the neighbouring
       `numeric_not_lexicographic` control. 256 is `0x0100` and 2 is `0x02`
       as minimal big-endian integers, so the pair ascends compared as byte
-      strings and descends by the numeric value R-030 names.
+      strings and descends by the numeric value the EIP orders on.
 
     Expectations come from reading the rule literally: a key list that is not
     strictly increasing is rejected, whichever position the break occupies.
@@ -250,8 +251,7 @@ def test_invalid_nonce_fields(
     error: TransactionException,
 ) -> None:
     """
-    Pin R-039, the `tx.nonce_seq < MAX_NONCE_SEQ` assertion that R-097's
-    reserved exhausted state is expressed as.
+    Pin the reserved exhausted sequence.
 
     MAX_NONCE_SEQ is the hard-coded reserved value, not a client-derived
     limit. The slot is seeded to `MAX_NONCE_SEQ` so that the per-key
