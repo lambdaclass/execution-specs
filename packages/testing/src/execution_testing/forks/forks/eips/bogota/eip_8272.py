@@ -8,14 +8,17 @@ from validation code afterwards.
 https://eips.ethereum.org/EIPS/eip-8272
 """
 
-from typing import Callable, Dict, List, Mapping
+from typing import Callable, Dict, List, Mapping, Sequence
 
+import ethereum_rlp as eth_rlp
+
+from execution_testing.base_types import Bytes
 from execution_testing.vm import (
     OpcodeBase,
     Opcodes,
 )
 
-from ....base_fork import BaseFork
+from ....base_fork import BaseFork, FrameGasInfo, FrameSignatureGasInfo
 
 RECENT_ROOT_ADDRESS = 0x0000000000000000000000000000000000008272
 
@@ -25,9 +28,42 @@ RECENT_ROOT_ACCOUNT = {
     "nonce": 1,
 }
 
+EMPTY_REFERENCE_LIST = Bytes(eth_rlp.encode([]))
+"""`rlp(recent_root_references)` when no reference is declared: one byte."""
+
 
 class EIP8272(BaseFork):
     """EIP-8272 class."""
+
+    @classmethod
+    def _frame_transaction_charged_bytes(
+        cls,
+        frames: Sequence[FrameGasInfo],
+        signatures: Sequence[FrameSignatureGasInfo],
+    ) -> List[Bytes]:
+        """
+        Add the recent root reference list, which EIP-8272 prices as
+        transaction data.
+
+        Every frame transaction pays it: the specification adds
+        `recent_root_calldata_cost` to `standard_gas_limit` and
+        `recent_root_calldata_tokens` to `calldata_tokens` with no
+        conditionality, and an empty list still encodes to one byte.
+        Both gas anchors read this helper, so extending it here keeps the
+        intrinsic-cost and calldata-floor calculators exact once this EIP
+        is active, without touching an EIP-8141 test.
+
+        The per-reference charge is not added here: it applies only to a
+        transaction that declares at least one reference, and the
+        calculator protocol carries no reference argument. The EIP-8272
+        suite states those expectations itself.
+        """
+        # The helper lives on EIP8141, which this mixin sits in front of in
+        # Bogota's MRO rather than deriving from — the same reason the
+        # pre-allocation overrides below carry an ignore.
+        return super(EIP8272, cls)._frame_transaction_charged_bytes(  # type: ignore[misc]
+            frames, signatures
+        ) + [EMPTY_REFERENCE_LIST]
 
     @classmethod
     def pre_allocation(cls) -> Mapping:

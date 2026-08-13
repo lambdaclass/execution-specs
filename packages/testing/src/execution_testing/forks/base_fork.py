@@ -961,6 +961,20 @@ class BaseFork(ForkOpcodeInterface, metaclass=BaseForkMeta):
         )
 
     @classmethod
+    def frame_txparam_undefined_selector(cls) -> int:
+        """
+        Return a ``TXPARAM`` selector this fork leaves undefined.
+
+        A fork that claims further selectors overrides this, so a test
+        asserting that reading an undefined selector halts keeps saying
+        that at every fork. Companion to the frame gas calculators: the
+        same problem, on the selector space rather than on gas.
+        """
+        raise NotImplementedError(
+            f"frame transactions are not supported in {cls.name()}"
+        )
+
+    @classmethod
     def frame_transaction_data_floor_cost_calculator(
         cls,
     ) -> FrameTransactionDataFloorCostCalculator:

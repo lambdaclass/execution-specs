@@ -7,7 +7,7 @@ are exercised from a `DEFAULT` frame that stores what it reads, so the
 post state pins the value each selector returns.
 """
 
-from typing import List
+from typing import Callable, List, Union
 
 import pytest
 from execution_testing import (
@@ -17,6 +17,7 @@ from execution_testing import (
     Alloc,
     Bytecode,
     Bytes,
+    Fork,
     Frame,
     FrameSignature,
     Op,
@@ -379,7 +380,11 @@ def test_frameparam_halts(
     "halting_read",
     [
         pytest.param(
-            Op.POP(Op.TXPARAM(0x0C)),
+            # Which selectors are undefined depends on the fork: a later
+            # EIP may claim the next one EIP-8141 leaves free.
+            lambda fork: Op.POP(
+                Op.TXPARAM(fork.frame_txparam_undefined_selector())
+            ),
             id="txparam_undefined_param",
         ),
         pytest.param(
@@ -403,7 +408,8 @@ def test_frameparam_halts(
 def test_introspection_halts(
     state_test: StateTestFiller,
     pre: Alloc,
-    halting_read: Bytecode,
+    fork: Fork,
+    halting_read: Union[Bytecode, Callable[[Fork], Bytecode]],
 ) -> None:
     """
     `TXPARAM`, `SIGPARAM`, `FRAMEDATALOAD` and `FRAMEDATACOPY` halt
@@ -416,10 +422,14 @@ def test_introspection_halts(
     of bounds. The probe writes a marker before the halting read, so
     a read that returned a value instead of halting would leave the
     marker behind.
+
+    A case given as a callable is resolved against the fork, for reads
+    whose undefined selector is not the same at every fork.
     """
+    read = halting_read(fork) if callable(halting_read) else halting_read
     sender = pre.fund_eoa()
     probe = pre.deploy_contract(
-        code=Op.SSTORE(SLOT_RESULT, 0xFF) + halting_read + Op.STOP
+        code=Op.SSTORE(SLOT_RESULT, 0xFF) + read + Op.STOP
     )
 
     state_test(
