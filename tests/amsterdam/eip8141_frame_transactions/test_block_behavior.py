@@ -10,12 +10,16 @@ frame can call a contract deployed by an earlier frame of the same
 transaction.
 """
 
+from typing import Dict, List
+
 import pytest
 from execution_testing import (
     Account,
+    Address,
     Alloc,
     Block,
     BlockchainTestFiller,
+    Environment,
     Fork,
     FrameReceipt,
     Hash,
@@ -28,7 +32,12 @@ from execution_testing import (
     compute_create_address,
 )
 
-from .helpers import default_frame, sender_frame, verify_frame
+from .helpers import (
+    AMPLE_FRAME_GAS,
+    default_frame,
+    sender_frame,
+    verify_frame,
+)
 from .spec import Spec, ref_spec_8141
 
 REFERENCE_SPEC_GIT_PATH = ref_spec_8141.git_path
@@ -336,4 +345,141 @@ def test_deploy_then_use(
                 storage={SLOT_RESULT: MARKER},
             ),
         },
+    )
+
+
+@pytest.mark.parametrize(
+    "pool_case",
+    [
+        "unused_gas_returned_exactly",
+        pytest.param(
+            "returned_gas_boundary_minus_one",
+            marks=pytest.mark.exception_test,
+        ),
+        pytest.param(
+            "admission_charges_max_gas",
+            marks=pytest.mark.exception_test,
+        ),
+    ],
+)
+def test_block_gas_pool_returns_unused(
+    blockchain_test: BlockchainTestFiller,
+    pre: Alloc,
+    fork: Fork,
+    pool_case: str,
+) -> None:
+    """
+    Return a frame transaction's unused gas to the block gas pool.
+
+    The frame transaction is admitted against its derived maximum gas
+    — the intrinsic execution gas plus its frame gas limit — but the
+    pool only keeps its hand-computed usage. A follow-up transaction
+    sized to the returned gas fits exactly when the block gas limit
+    equals the frame transaction's usage plus the follow-up's limit,
+    and no longer fits when the limit is one less. The third arm pins
+    the admission side: a block gas limit one below the derived
+    maximum gas rejects the frame transaction outright, however
+    little it would consume.
+    """
+    gas_costs = fork.gas_costs()
+    frame_sender = pre.deploy_contract(code=APPROVE_ALL_CODE, balance=10**18)
+    follow_up_sender = pre.fund_eoa()
+    canary = pre.deploy_contract(code=Op.SSTORE(SLOT_RESULT, MARKER) + Op.STOP)
+
+    verify_gas_used = gas_costs.WARM_ACCESS + APPROVE_ALL_CODE.gas_cost(fork)
+    frame_tx_intrinsic = (
+        Spec.FRAME_TX_INTRINSIC_COST + Spec.FRAME_TX_PER_FRAME_COST
+    )
+    # The contract sender carries no signature entries and the frame
+    # no data, so no calldata-priced bytes enter the formulas and the
+    # standard path dominates the floor.
+    frame_tx_gas_used = frame_tx_intrinsic + verify_gas_used
+    frame_tx_max_gas = frame_tx_intrinsic + AMPLE_FRAME_GAS
+
+    # The follow-up limit leaves room for the fresh write's state gas.
+    follow_up_gas_limit = PROBE_FRAME_GAS
+    exact_limit = frame_tx_gas_used + follow_up_gas_limit
+    # The frame transaction must itself fit the pool by its maximum
+    # gas; the verify frame's unused gas provides the slack.
+    assert frame_tx_max_gas <= exact_limit
+    # Were the pool charged the maximum gas instead of the usage, the
+    # remainder would be far below the follow-up's limit, so the exact
+    # arm distinguishes the two accountings.
+    assert exact_limit - frame_tx_max_gas < follow_up_gas_limit
+
+    blocks: List[Block]
+    post: Dict[Address, Account]
+    if pool_case == "unused_gas_returned_exactly":
+        genesis_environment = Environment(gas_limit=exact_limit)
+        blocks = [
+            Block(
+                txs=[
+                    Transaction(
+                        sender=frame_sender,
+                        nonce=1,
+                        frames=[verify_frame()],
+                        expected_receipt=TransactionReceipt(
+                            cumulative_gas_used=frame_tx_gas_used,
+                            payer=frame_sender,
+                        ),
+                    ),
+                    Transaction(
+                        sender=follow_up_sender,
+                        to=canary,
+                        gas_limit=follow_up_gas_limit,
+                    ),
+                ]
+            )
+        ]
+        post = {
+            canary: Account(storage={SLOT_RESULT: MARKER}),
+            frame_sender: Account(nonce=2),
+        }
+    elif pool_case == "returned_gas_boundary_minus_one":
+        genesis_environment = Environment(gas_limit=exact_limit - 1)
+        blocks = [
+            Block(
+                txs=[
+                    Transaction(
+                        sender=frame_sender,
+                        nonce=1,
+                        frames=[verify_frame()],
+                    ),
+                    Transaction(
+                        sender=follow_up_sender,
+                        to=canary,
+                        gas_limit=follow_up_gas_limit,
+                        error=TransactionException.GAS_ALLOWANCE_EXCEEDED,
+                    ),
+                ],
+                exception=TransactionException.GAS_ALLOWANCE_EXCEEDED,
+            )
+        ]
+        post = {
+            canary: Account(storage={SLOT_RESULT: 0}),
+            frame_sender: Account(nonce=1),
+        }
+    else:
+        assert pool_case == "admission_charges_max_gas"
+        genesis_environment = Environment(gas_limit=frame_tx_max_gas - 1)
+        blocks = [
+            Block(
+                txs=[
+                    Transaction(
+                        sender=frame_sender,
+                        nonce=1,
+                        frames=[verify_frame()],
+                        error=TransactionException.GAS_ALLOWANCE_EXCEEDED,
+                    ),
+                ],
+                exception=TransactionException.GAS_ALLOWANCE_EXCEEDED,
+            )
+        ]
+        post = {frame_sender: Account(nonce=1)}
+
+    blockchain_test(
+        pre=pre,
+        genesis_environment=genesis_environment,
+        blocks=blocks,
+        post=post,
     )
