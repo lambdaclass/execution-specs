@@ -1,0 +1,4 @@
+general/code_coverage/eels = Every fixture in this directory is produced by executing the EELS implementation of the fork through the t8n tool, so filling the suite exercises the reference code path under test
+general/code_coverage/test_coverage = Run locally
+general/code_coverage/missed_lines = No missed lines are known; the EIP adds the three state-diff instructions, the POST_TX frame mode and its static validity rules, and each branch of those is reached by an arm of this suite
+general/code_coverage/second_client = Optional

@@ -6196,6 +6196,7 @@ class Opcodes(Opcode, Enum):
         popped_stack_items=4,
         pushed_stack_items=0,
         kwargs=["event_index", "dest_offset", "offset", "size"],
+        metadata={"data_size": 0, "new_memory_size": 0, "old_memory_size": 0},
     )
     """
     EVENTDATACOPY(event_index, dest_offset, offset, size)
@@ -6231,6 +6232,7 @@ class Opcodes(Opcode, Enum):
         popped_stack_items=3,
         pushed_stack_items=1,
         kwargs=["in3", "address", "param"],
+        metadata={"key_warm": True, "address_warm": True},
     )
     """
     TXDIFF(in3, address, param)
