@@ -644,15 +644,18 @@ def dependencies(tx: FrameTransaction) -> Tuple[Dependency, ...]:
     [p]: ref:ethereum.forks.bogota.transactions.frame_transaction.FrameMode.PROOF
     [ph]: ref:ethereum.forks.bogota.transactions.frame_transaction.SIGNATURE_HASH_PLACEHOLDER
     """  # noqa: E501
+    # Hashing the transaction costs as much as its size, and it may declare
+    # many triples, so its signature hash is computed once.
+    signature_hash: Optional[Hash32] = None
     declared: List[Dependency] = []
     for frame in tx.frames:
         if frame.mode != FrameMode.PROOF:
             continue
         for dependency in frame_dependencies(frame):
             if dependency.data_hash == SIGNATURE_HASH_PLACEHOLDER:
-                dependency = replace(
-                    dependency, data_hash=compute_frame_signature_hash(tx)
-                )
+                if signature_hash is None:
+                    signature_hash = compute_frame_signature_hash(tx)
+                dependency = replace(dependency, data_hash=signature_hash)
             declared.append(dependency)
     return deduplicate_and_sort(declared)
 
