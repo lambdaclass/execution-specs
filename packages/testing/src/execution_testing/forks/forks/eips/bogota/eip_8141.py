@@ -33,6 +33,7 @@ EXPIRY_VERIFIER_BYTECODE = bytes.fromhex(
 class _DatalessFrame:
     """Stand-in for a frame carrying no data, no value, no frame gas."""
 
+    mode = 0
     data = b""
     gas_limit = 0
     state_gas_limit = 0
@@ -175,7 +176,8 @@ class EIP8141(BaseFork):
         execution: the base cost, the per-frame cost, the verification
         cost of each signature entry, the value transfer cost of each
         value-bearing frame whose explicit target differs from the
-        sender, and any nonce key access cost priced by a later EIP.
+        sender, and any nonce key access cost or dependency witness
+        cost priced by a later EIP.
         """
         gas_costs = cls.gas_costs()
         scheme_gas = {
@@ -199,6 +201,7 @@ class EIP8141(BaseFork):
             + sum(scheme_gas[int(sig.scheme)] for sig in signatures)
             + value_transfer_cost
             + cls._frame_transaction_nonce_access_cost(nonce_keys)
+            + cls._frame_transaction_dependency_witness_cost(frames)
         )
 
     @classmethod

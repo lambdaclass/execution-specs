@@ -483,11 +483,82 @@ def test_system_contract_call_phases(fork: Fork) -> None:
 def test_frame_mode_count() -> None:
     """
     Count no frame modes before frame transactions, the three EIP-8141
-    modes, and EIP-7906's `ASSERT` on top of them.
+    modes, EIP-7906's `ASSERT` on top of them, and EIP-8504's `PROOF`
+    after it.
     """
     assert Osaka.frame_mode_count() == 0
     assert Amsterdam.frame_mode_count() == 0
-    assert Bogota.frame_mode_count() == 4
+    assert Bogota.frame_mode_count() == 5
+
+
+def test_dependency_witnesses_are_required_from_bogota() -> None:
+    """
+    Require the dependency witnesses hash in the header, and the witnesses
+    in the engine payload, from the fork that introduces EIP-8504.
+    """
+    assert not Amsterdam.header_dependency_witnesses_hash_required()
+    assert not Amsterdam.engine_execution_payload_dependency_witnesses()
+    assert Bogota.header_dependency_witnesses_hash_required()
+    assert Bogota.engine_execution_payload_dependency_witnesses()
+
+
+def test_frame_transaction_dependency_witness_cost() -> None:
+    """
+    Charge one witness for each distinct triple declared by the `PROOF`
+    frames of a frame transaction, in both the intrinsic cost and the
+    calldata floor, and nothing for the same bytes in a frame of another
+    mode.
+    """
+
+    class StubFrame:
+        """A frame as the gas calculators see it."""
+
+        gas_limit = 0
+        state_gas_limit = 0
+        value = 0
+        target = None
+
+        def __init__(self, mode: int, data: bytes) -> None:
+            self.mode = mode
+            self.data = data
+
+    triple = bytes(31) + b"\x10" + bytes(32) + b"\x01" * 32
+    other_triple = bytes(31) + b"\x10" + bytes(32) + b"\x02" * 32
+    witness = Bogota.gas_costs().TX_DEPENDENCY_WITNESS
+    assert witness > 0
+
+    intrinsic = Bogota.frame_transaction_intrinsic_cost_calculator()
+    floor = Bogota.frame_transaction_data_floor_cost_calculator()
+
+    def costs(*frames: StubFrame) -> tuple[int, int]:
+        return (
+            intrinsic(frames=list(frames), signatures=[], sender=None),
+            floor(frames=list(frames), signatures=[], sender=None),
+        )
+
+    # The same bytes in a `DEFAULT` frame are calldata and nothing more.
+    plain = costs(StubFrame(0, triple))
+    one = costs(StubFrame(4, triple))
+    assert one == (plain[0] + witness, plain[1] + witness)
+
+    # A repeated triple is one dependency, within a frame or across two.
+    plain = costs(StubFrame(0, triple * 2))
+    assert costs(StubFrame(4, triple * 2)) == (
+        plain[0] + witness,
+        plain[1] + witness,
+    )
+    plain = costs(StubFrame(0, triple), StubFrame(0, triple))
+    assert costs(StubFrame(4, triple), StubFrame(4, triple)) == (
+        plain[0] + witness,
+        plain[1] + witness,
+    )
+
+    # Two distinct triples are two dependencies.
+    plain = costs(StubFrame(0, triple + other_triple))
+    assert costs(StubFrame(4, triple + other_triple)) == (
+        plain[0] + 2 * witness,
+        plain[1] + 2 * witness,
+    )
 
 
 def test_tx_types() -> None:  # noqa: D103

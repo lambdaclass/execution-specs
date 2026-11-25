@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Final, List, Optional, Tuple, final
 
 from ethereum_types.numeric import U64, U256, Uint, ulen
 
+from ethereum.crypto.lean_sphincs import SIGNATURE_SIZE
 from ethereum.exceptions import GasUsedExceedsLimitError
 from ethereum.forks.amsterdam.blocks import Header as PreviousHeader
 from ethereum.trace import GasAndRefund, StateGasAndRefund, evm_trace
@@ -229,6 +230,28 @@ class GasCosts:
     Intrinsic cost of each non-zero nonce key of a [`FrameTransaction`][ftx]:
     the cold read and the write of its slot in the nonce manager, which the
     protocol performs outside the access lists and `SSTORE` pricing.
+
+    [ftx]: ref:ethereum.forks.bogota.transactions.frame_transaction.FrameTransaction
+    """  # noqa: E501
+
+    PROOF_VERIFICATION: Final[ExecutionGas] = ExecutionGas(Uint(3000))
+    """
+    Execution gas a [`PROOF`][p] frame carries for each dependency it
+    declares, which pays for checking the witness of that dependency. The
+    specification of proof frames calls it `LEANSPHINCS_VERIFICATION_GAS`.
+
+    [p]: ref:ethereum.forks.bogota.transactions.frame_transaction.FrameMode.PROOF
+    """  # noqa: E501
+
+    TX_DEPENDENCY_WITNESS: Final[ExecutionGas] = ExecutionGas(
+        Uint(SIGNATURE_SIZE) * TX_DATA_TOKEN_STANDARD * TX_DATA_TOKEN_FLOOR
+    )
+    """
+    Intrinsic cost of each distinct dependency of a [`FrameTransaction`][ftx]:
+    the bytes of the witness a block carries for it, priced as non-zero
+    calldata at the floor rate. The witness is not part of the transaction,
+    so nothing else prices those bytes. The specification of proof frames
+    calls it `LEANSPHINCS_WITNESS_GAS`.
 
     [ftx]: ref:ethereum.forks.bogota.transactions.frame_transaction.FrameTransaction
     """  # noqa: E501

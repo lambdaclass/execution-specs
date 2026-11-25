@@ -265,6 +265,9 @@ class BlockchainTestFixture(Fixture, FixtureTestItem):
         if hasattr(genesis_header, "requests_root"):
             parameters.append(())
 
+        if hasattr(genesis_header, "dependency_witnesses_hash"):
+            parameters.append(())
+
         genesis_block = current.fork.Block(*parameters)
 
         genesis_header_hash = hex_to_bytes(

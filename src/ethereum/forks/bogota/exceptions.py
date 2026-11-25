@@ -208,6 +208,17 @@ class FrameTransactionExecutionError(InvalidTransaction):
     """
 
 
+class InvalidDependencyWitnessesError(InvalidBlock):
+    """
+    The block's dependency witnesses are not exactly one valid witness for
+    each distinct dependency of its transactions, in order.
+
+    Introduced in [EIP-8504].
+
+    [EIP-8504]: https://eips.ethereum.org/EIPS/eip-8504
+    """
+
+
 class BlockAccessListGasLimitExceededError(InvalidBlock):
     """
     The block access list exceeds the gas limit constraint.

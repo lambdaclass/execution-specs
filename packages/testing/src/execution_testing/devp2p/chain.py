@@ -24,6 +24,7 @@ from execution_testing.fixtures.blockchain import (
     FixtureEngineNewPayload,
     FixtureExecutionPayload,
     FixtureHeader,
+    dependency_witnesses_hash,
 )
 from execution_testing.forks import Requests
 from execution_testing.test_types.block_types import Withdrawal
@@ -60,6 +61,11 @@ class Block:
     `None` before Amsterdam. It is not part of the body: eth/71
     (EIP-8159) serves it through its own request pair.
     """
+    dependency_witnesses: List[Bytes] | None = None
+    """
+    The block's EIP-8504 dependency witnesses, as its payload carries
+    them; `None` before the EIP. They are the last item of the body.
+    """
 
     @property
     def number(self) -> int:
@@ -90,6 +96,15 @@ class Block:
                     ]
                 )
             )
+        if self.dependency_witnesses is not None:
+            items.append(
+                encode_list(
+                    [
+                        eth_rlp.encode(bytes(witness))
+                        for witness in self.dependency_witnesses
+                    ]
+                )
+            )
         return encode_list(items)
 
 
@@ -110,6 +125,7 @@ def block_from_payload(payload: FixtureEngineNewPayload) -> Block:
     beacon_root = payload.params[2] if len(payload.params) > 2 else None
     execution_requests = payload.params[3] if len(payload.params) > 3 else None
     block_access_list = execution_payload.block_access_list
+    dependency_witnesses = execution_payload.dependency_witnesses
 
     header = FixtureHeader(
         parent_hash=execution_payload.parent_hash,
@@ -146,6 +162,11 @@ def block_from_payload(payload: FixtureEngineNewPayload) -> Block:
             else block_access_list.keccak256()
         ),
         slot_number=execution_payload.slot_number,
+        dependency_witnesses_hash=(
+            None
+            if dependency_witnesses is None
+            else dependency_witnesses_hash(dependency_witnesses)
+        ),
     )
 
     if header.block_hash != execution_payload.block_hash:
@@ -161,6 +182,11 @@ def block_from_payload(payload: FixtureEngineNewPayload) -> Block:
         withdrawals=None if withdrawals is None else list(withdrawals),
         bal_rlp=(
             None if block_access_list is None else bytes(block_access_list)
+        ),
+        dependency_witnesses=(
+            None
+            if dependency_witnesses is None
+            else list(dependency_witnesses)
         ),
     )
 

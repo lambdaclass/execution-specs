@@ -707,6 +707,23 @@ def process_frames(
                 skip_batch = False
             continue
 
+        if frame.mode == FrameMode.PROOF:
+            # A proof frame only declares dependencies. It makes no call,
+            # accesses no account and changes no state, and its whole
+            # execution budget counts as used: that budget pays for
+            # checking the witnesses, which happens outside execution.
+            frame_context.frame_receipts.append(
+                FrameReceipt(
+                    status=FrameStatus.SUCCESS,
+                    gas_used=GasUsed(
+                        execution=Uint(frame.gas_limits.execution),
+                        state=Uint(0),
+                    ),
+                    logs=(),
+                )
+            )
+            continue
+
         if (
             frame.mode == FrameMode.SENDER
             and not frame_context.sender_approved

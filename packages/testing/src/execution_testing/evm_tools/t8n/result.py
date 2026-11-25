@@ -174,6 +174,15 @@ def build_result(
         arguments["block_access_list_hash"] = t8n.fork.hash_block_access_list(
             block_output.block_access_list
         )
+    if t8n.fork.has_dependency_witnesses:
+        arguments["dependency_witnesses_hash"] = (
+            t8n.fork.hash_dependency_witnesses(
+                tuple(
+                    bytes(witness)
+                    for witness in t8n.env.dependency_witnesses or []
+                )
+            )
+        )
 
     context: Optional[Dict[str, Any]] = None
     if t8n.exception_mapper is not None:

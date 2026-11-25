@@ -40,6 +40,10 @@ from .block_access_lists import (
 )
 from .blocks import Block, Header, Log, Receipt, Withdrawal, encode_receipt
 from .bloom import logs_bloom
+from .dependency_witnesses import (
+    hash_dependency_witnesses,
+    validate_dependency_witnesses,
+)
 from .exceptions import WrongChainIdError
 from .fork_types import Authorization, BlockAccessIndex, ExecutionGas, StateGas
 from .frame_processing import process_frame_transaction
@@ -297,6 +301,18 @@ def execute_block(
 
     if block.ommers != ():
         raise InvalidBlock
+
+    # The dependency witnesses are checked against the block's contents
+    # alone, so nothing of the block has to execute first.
+    if (
+        hash_dependency_witnesses(block.dependency_witnesses)
+        != block.header.dependency_witnesses_hash
+    ):
+        raise InvalidBlock("Invalid dependency witnesses hash")
+    validate_dependency_witnesses(
+        tuple(map(decode_transaction, block.transactions)),
+        block.dependency_witnesses,
+    )
 
     block_state = BlockState(pre_state=pre_state)
 

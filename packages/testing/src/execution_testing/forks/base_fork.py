@@ -173,9 +173,14 @@ class FrameGasInfo(Protocol):
     """
     Structural view of an EIP-8141 frame's contribution to the
     transaction's gas anchors. The test ``Frame`` satisfies it via its
-    ``data``, ``gas_limit``, ``state_gas_limit``, ``value``, and
-    ``target`` fields.
+    ``mode``, ``data``, ``gas_limit``, ``state_gas_limit``, ``value``,
+    and ``target`` fields.
     """
+
+    @property
+    def mode(self) -> int:
+        """Return the frame's mode, deciding how its data is priced."""
+        ...
 
     @property
     def data(self) -> BytesConvertible:
@@ -778,6 +783,15 @@ class BaseFork(ForkOpcodeInterface, metaclass=BaseForkMeta):
     @abstractmethod
     def header_slot_number_required(cls) -> bool:
         """Return true if the header must contain slot number (EIP-7843)."""
+        pass
+
+    @classmethod
+    @abstractmethod
+    def header_dependency_witnesses_hash_required(cls) -> bool:
+        """
+        Return true if the header must contain the hash of the block's
+        dependency witnesses (EIP-8504).
+        """
         pass
 
     # Gas related abstract methods
@@ -1464,6 +1478,28 @@ class BaseFork(ForkOpcodeInterface, metaclass=BaseForkMeta):
         del nonce_keys
         return 0
 
+    @classmethod
+    def _frame_transaction_dependency_witness_cost(
+        cls, frames: Sequence[FrameGasInfo]
+    ) -> int:
+        """
+        Return the intrinsic cost of the witnesses a block carries for
+        the dependencies a frame transaction declares.
+        """
+        del frames
+        return 0
+
+    @classmethod
+    def _frame_modes_after_assert(cls) -> int:
+        """
+        Return the number of frame modes introduced after `ASSERT`.
+
+        The EIP that adds such a mode cannot extend `frame_mode_count`
+        through `super()`: its class is resolved after the ones that
+        define the earlier modes.
+        """
+        return 0
+
     # Engine API information abstract methods
     @classmethod
     @abstractmethod
@@ -1507,6 +1543,15 @@ class BaseFork(ForkOpcodeInterface, metaclass=BaseForkMeta):
         """
         Return `True` if the engine api version requires execution payload to
         include a `block_access_list`.
+        """
+        pass
+
+    @classmethod
+    @abstractmethod
+    def engine_execution_payload_dependency_witnesses(cls) -> bool:
+        """
+        Return `True` if the execution payload includes the block's
+        `dependency_witnesses`.
         """
         pass
 

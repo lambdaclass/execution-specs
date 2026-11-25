@@ -28,10 +28,13 @@ class EIP7906(BaseFork):
 
     @classmethod
     def frame_mode_count(cls) -> int:
-        """The `ASSERT` frame mode is introduced after the existing ones."""
+        """
+        The `ASSERT` frame mode is introduced after the existing ones,
+        and before the modes of later EIPs.
+        """
         count = super(EIP7906, cls).frame_mode_count()
         assert count == ASSERT_MODE, "ASSERT must be the next frame mode"
-        return count + 1
+        return count + 1 + cls._frame_modes_after_assert()
 
     @classmethod
     def gas_costs(cls) -> GasCosts:

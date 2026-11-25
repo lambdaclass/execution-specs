@@ -88,6 +88,7 @@ from .test_types import (
     BlockAccessList,
     BlockAccessListExpectation,
     ChainConfig,
+    Dependency,
     Environment,
     Frame,
     FrameFlag,
@@ -97,6 +98,7 @@ from .test_types import (
     FrameSignatureScheme,
     FrameStatus,
     GasFee,
+    LeanSphincsKey,
     NetworkWrappedTransaction,
     Removable,
     SystemContractInteractionBase,
@@ -112,6 +114,7 @@ from .test_types import (
     TransactionType,
     Withdrawal,
     add_kzg_version,
+    block_dependencies,
     ceiling_division,
     compute_create2_address,
     compute_create_address,
@@ -119,6 +122,8 @@ from .test_types import (
     fee_increment_blocks,
     keccak256,
     relay_contract_code,
+    sign_dependencies,
+    transaction_dependencies,
 )
 from .tools import (
     CalldataCase,
@@ -161,6 +166,11 @@ from .vm import (
 
 __all__ = (
     "DETERMINISTIC_FACTORY_ADDRESS",
+    "Dependency",
+    "LeanSphincsKey",
+    "block_dependencies",
+    "sign_dependencies",
+    "transaction_dependencies",
     "AccessList",
     "Account",
     "Address",

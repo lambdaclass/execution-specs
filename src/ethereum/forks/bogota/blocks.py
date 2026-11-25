@@ -269,6 +269,22 @@ class Header:
     [EIP-7843]: https://eips.ethereum.org/EIPS/eip-7843
     """
 
+    dependency_witnesses_hash: Hash32
+    """
+    [`keccak256`] hash of the RLP encoding of the block's
+    [`dependency_witnesses`][dw]. Introduced in [EIP-8504]. See
+    [`hash_dependency_witnesses`][hdw] for more details.
+
+    The field commits to the witnesses only. The dependencies they satisfy
+    are derived from the transactions, which `transactions_root` already
+    commits to.
+
+    [`keccak256`]: ref:ethereum.crypto.hash.keccak256
+    [EIP-8504]: https://eips.ethereum.org/EIPS/eip-8504
+    [dw]: ref:ethereum.forks.bogota.blocks.Block.dependency_witnesses
+    [hdw]: ref:ethereum.forks.bogota.dependency_witnesses.hash_dependency_witnesses
+    """  # noqa: E501
+
 
 @final
 @slotted_freezable
@@ -321,6 +337,19 @@ class Block:
     withdrawals: Tuple[Withdrawal, ...]
     """
     A tuple of withdrawals processed in this block.
+    """
+
+    dependency_witnesses: Tuple[Bytes, ...]
+    """
+    One witness for each distinct dependency of the block's transactions, in
+    the order of [`block_dependencies`][bd]. Introduced in [EIP-8504].
+
+    A witness is the signature that satisfies its dependency. Witnesses are
+    not part of any transaction, so a dependency that several transactions
+    declare has a single witness here.
+
+    [EIP-8504]: https://eips.ethereum.org/EIPS/eip-8504
+    [bd]: ref:ethereum.forks.bogota.dependency_witnesses.block_dependencies
     """
 
 

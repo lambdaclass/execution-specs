@@ -270,6 +270,10 @@ class ExecutionSpecsExceptionMapper(ExceptionMapper):
         BlockException.BLOCK_ACCESS_LIST_GAS_LIMIT_EXCEEDED: (
             "Block access list exceeds gas limit"
         ),
+        BlockException.INVALID_DEPENDENCY_WITNESSES: "Dependency witness",
+        BlockException.INVALID_DEPENDENCY_WITNESSES_HASH: (
+            "Invalid dependency witnesses hash"
+        ),
         TransactionException.LOG_MISMATCH: "LogMismatchError",
         TransactionException.TYPE_6_INVALID_FRAME_FORMAT: (
             "InvalidFrameError"

@@ -19,7 +19,10 @@ from execution_testing.base_types import (
     Hash,
     to_json,
 )
-from execution_testing.fixtures.blockchain import FixtureHeader
+from execution_testing.fixtures.blockchain import (
+    FixtureHeader,
+    dependency_witnesses_hash,
+)
 from execution_testing.forks import Fork, Requests, TransitionFork
 from execution_testing.rpc import EngineRPC, EthRPC
 from execution_testing.test_types import (
@@ -186,6 +189,9 @@ def build_genesis_header(
         if genesis_fork.header_bal_hash_required()
         else None,
         slot_number=0 if genesis_fork.header_slot_number_required() else None,
+        dependency_witnesses_hash=dependency_witnesses_hash([])
+        if genesis_fork.header_dependency_witnesses_hash_required()
+        else None,
     )
 
     return (pre_alloc, genesis)

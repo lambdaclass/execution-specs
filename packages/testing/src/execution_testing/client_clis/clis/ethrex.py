@@ -195,6 +195,14 @@ class EthrexExceptionMapper(ExceptionMapper):
             r"Maximum block size exceeded.*"
         ),
         BlockException.INVALID_BAL_HASH: r"BAL validation failed",
+        BlockException.INVALID_DEPENDENCY_WITNESSES: (
+            r"Block carries \d+ dependency witnesses for its \d+ "
+            r"dependencies|"
+            r"Dependency witness \d+ does not satisfy its dependency"
+        ),
+        BlockException.INVALID_DEPENDENCY_WITNESSES_HASH: (
+            r"Dependency witnesses do not match the header"
+        ),
         BlockException.INVALID_BLOCK_ACCESS_LIST: (
             r"Block access list contains index \d+ "
             r"exceeding max valid index \d+|"

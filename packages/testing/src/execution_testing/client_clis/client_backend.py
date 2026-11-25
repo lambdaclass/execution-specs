@@ -14,6 +14,8 @@ info, block boundaries, and pre-alloc declarations flow unchanged.
 from pathlib import Path
 from typing import Any, ClassVar, Dict, List, Optional
 
+import ethereum_rlp as eth_rlp
+
 from execution_testing.base_types import Bytes, Hash
 from execution_testing.exceptions import ExceptionBase, ExceptionMapper
 from execution_testing.forks import Fork, Requests, TransitionFork
@@ -496,6 +498,14 @@ class ClientBackend:
             # would diverge whenever the client's RLP is non-canonical.
             block_access_list_hash = Hash(bal_rlp.keccak256())
 
+        witnesses_hash: Hash | None = None
+        witnesses = getattr(built_payload, "dependency_witnesses", None)
+        if witnesses is not None:
+            # EIP-8504: the header commits to the RLP of the witness list.
+            witnesses_hash = Bytes(
+                eth_rlp.encode([bytes(witness) for witness in witnesses])
+            ).keccak256()
+
         return Result(
             state_root=built_payload.state_root,
             ommers_hash=None,
@@ -514,6 +524,7 @@ class ClientBackend:
             requests=requests,
             block_access_list=bal_rlp,
             block_access_list_hash=block_access_list_hash,
+            dependency_witnesses_hash=witnesses_hash,
             block_exception=None,
             traces=None,
             opcode_count=None,

@@ -14,7 +14,16 @@ protocol validates before any frame executes.
 
 from dataclasses import dataclass, replace
 from enum import STRICT
-from typing import TYPE_CHECKING, Final, Optional, Tuple, assert_never, final
+from typing import (
+    TYPE_CHECKING,
+    Final,
+    List,
+    Optional,
+    Sequence,
+    Tuple,
+    assert_never,
+    final,
+)
 
 from ethereum_rlp import rlp
 from ethereum_types.bytes import Bytes, Bytes0, Bytes32
@@ -132,6 +141,42 @@ Address of the recent root contract of [EIP-8272].
 [EIP-8272]: https://eips.ethereum.org/EIPS/eip-8272
 """
 
+DEPENDENCY_LENGTH: Final[Uint] = Uint(96)
+"""
+Length, in bytes, of one [`Dependency`] triple in the `data` of a
+[`PROOF`][p] frame.
+
+[`Dependency`]: ref:ethereum.forks.bogota.transactions.frame_transaction.Dependency
+[p]: ref:ethereum.forks.bogota.transactions.frame_transaction.FrameMode.PROOF
+"""  # noqa: E501
+
+MAX_DEPENDENCIES_PER_FRAME: Final[Uint] = Uint(256)
+"""
+Maximum number of [`Dependency`] triples a single [`PROOF`][p] frame may
+declare, counting repeated triples.
+
+[`Dependency`]: ref:ethereum.forks.bogota.transactions.frame_transaction.Dependency
+[p]: ref:ethereum.forks.bogota.transactions.frame_transaction.FrameMode.PROOF
+"""  # noqa: E501
+
+LEAN_SPHINCS_SCHEME: Final[Uint] = Uint(0x10)
+"""
+Scheme of a [`Dependency`] that is satisfied by a leanSPHINCS signature,
+the only scheme defined.
+
+[`Dependency`]: ref:ethereum.forks.bogota.transactions.frame_transaction.Dependency
+"""  # noqa: E501
+
+SIGNATURE_HASH_PLACEHOLDER: Final[Bytes32] = Bytes32(b"\x00" * 32)
+"""
+Value of [`data_hash`][dh] in an encoded [`Dependency`] triple that stands
+for the signature hash of the transaction declaring it. A transaction cannot
+name its own signature hash, since that hash covers the triple.
+
+[`Dependency`]: ref:ethereum.forks.bogota.transactions.frame_transaction.Dependency
+[dh]: ref:ethereum.forks.bogota.transactions.frame_transaction.Dependency.data_hash
+"""  # noqa: E501
+
 
 @final
 class FrameMode(UintEnum, boundary=STRICT):
@@ -179,6 +224,21 @@ class FrameMode(UintEnum, boundary=STRICT):
 
     [EIP-7906]: https://eips.ethereum.org/EIPS/eip-7906
     """
+
+    PROOF = Uint(4)
+    """
+    Declare dependencies of the transaction, as defined by [EIP-8504].
+
+    A `PROOF` frame executes no code. Its `data` is a list of
+    [`Dependency`] triples, each stating that a message is signed under a
+    public key. The signatures themselves are not part of the transaction:
+    a block carries one witness for each distinct dependency of its
+    transactions, and is invalid unless every witness satisfies its
+    dependency.
+
+    [EIP-8504]: https://eips.ethereum.org/EIPS/eip-8504
+    [`Dependency`]: ref:ethereum.forks.bogota.transactions.frame_transaction.Dependency
+    """  # noqa: E501
 
 
 @final
@@ -499,6 +559,117 @@ class FrameTransaction:
     """
 
 
+@final
+@slotted_freezable
+@dataclass(order=True)
+class Dependency:
+    """
+    Statement, declared by a [`PROOF`][p] frame, that a block must carry a
+    witness for.
+
+    A dependency with the [`LEAN_SPHINCS_SCHEME`][s] states that
+    [`data_hash`][dh] is signed under the leanSPHINCS public key
+    [`verification_key_hash`][vk].
+
+    Dependencies are ordered by scheme, then by `data_hash`, then by
+    `verification_key_hash`, the last two compared byte by byte.
+
+    [p]: ref:ethereum.forks.bogota.transactions.frame_transaction.FrameMode.PROOF
+    [s]: ref:ethereum.forks.bogota.transactions.frame_transaction.LEAN_SPHINCS_SCHEME
+    [dh]: ref:ethereum.forks.bogota.transactions.frame_transaction.Dependency.data_hash
+    [vk]: ref:ethereum.forks.bogota.transactions.frame_transaction.Dependency.verification_key_hash
+    """  # noqa: E501
+
+    scheme: Uint
+    """
+    Kind of witness that satisfies the dependency.
+    """
+
+    data_hash: Bytes32
+    """
+    The signed message.
+    """
+
+    verification_key_hash: Bytes32
+    """
+    The public key the message is signed under. A leanSPHINCS public key is
+    already this size, so it is used directly rather than hashed.
+    """
+
+
+def frame_dependencies(frame: Frame) -> Tuple[Dependency, ...]:
+    """
+    Decode the [`Dependency`] triples in the `data` of a [`PROOF`][p] frame,
+    in the order they are encoded and as they are encoded: a
+    [`SIGNATURE_HASH_PLACEHOLDER`][ph] is returned as is.
+
+    Each triple is a scheme, right-aligned in one word, followed by the
+    `data_hash` and the `verification_key_hash`. Only the last byte of the
+    first word is read; [`validate_frame_transaction`][v] rejects a frame
+    whose padding is not zero, as well as one whose `data` is not a whole
+    number of triples.
+
+    [`Dependency`]: ref:ethereum.forks.bogota.transactions.frame_transaction.Dependency
+    [p]: ref:ethereum.forks.bogota.transactions.frame_transaction.FrameMode.PROOF
+    [ph]: ref:ethereum.forks.bogota.transactions.frame_transaction.SIGNATURE_HASH_PLACEHOLDER
+    [v]: ref:ethereum.forks.bogota.transactions.frame_transaction.validate_frame_transaction
+    """  # noqa: E501
+    length = int(DEPENDENCY_LENGTH)
+    triples = []
+    for start in range(0, len(frame.data) - length + 1, length):
+        triple = frame.data[start : start + length]
+        triples.append(
+            Dependency(
+                scheme=Uint(triple[31]),
+                data_hash=Bytes32(triple[32:64]),
+                verification_key_hash=Bytes32(triple[64:96]),
+            )
+        )
+    return tuple(triples)
+
+
+def dependencies(tx: FrameTransaction) -> Tuple[Dependency, ...]:
+    """
+    Derive the dependencies of a frame transaction from the triples of all
+    of its [`PROOF`][p] frames.
+
+    Every [`SIGNATURE_HASH_PLACEHOLDER`][ph] is replaced by the transaction's
+    signature hash, and the resulting triples are sorted and deduplicated, so
+    a triple declared more than once contributes a single dependency.
+
+    The substitution happens only here. The frame's `data` keeps the
+    placeholder, which is what the signature hash covers and what the frame
+    introspection instructions return.
+
+    [p]: ref:ethereum.forks.bogota.transactions.frame_transaction.FrameMode.PROOF
+    [ph]: ref:ethereum.forks.bogota.transactions.frame_transaction.SIGNATURE_HASH_PLACEHOLDER
+    """  # noqa: E501
+    declared: List[Dependency] = []
+    for frame in tx.frames:
+        if frame.mode != FrameMode.PROOF:
+            continue
+        for dependency in frame_dependencies(frame):
+            if dependency.data_hash == SIGNATURE_HASH_PLACEHOLDER:
+                dependency = replace(
+                    dependency, data_hash=compute_frame_signature_hash(tx)
+                )
+            declared.append(dependency)
+    return deduplicate_and_sort(declared)
+
+
+def deduplicate_and_sort(
+    declared: Sequence[Dependency],
+) -> Tuple[Dependency, ...]:
+    """
+    Order dependencies and keep one of each.
+    """
+    ordered: List[Dependency] = []
+    for dependency in sorted(declared):
+        if len(ordered) == 0 or dependency != ordered[-1]:
+            ordered.append(dependency)
+    return tuple(ordered)
+
+
 def resolve_frame_target(tx: FrameTransaction, frame: Frame) -> Address:
     """
     Resolve the account a frame executes at: an empty `to` resolves to
@@ -805,6 +976,9 @@ def validate_frame_transaction(
                 "atomic batch frames cannot carry approval scope"
             )
 
+        if frame.mode == FrameMode.PROOF:
+            validate_proof_frame(tx, index)
+
         if frame.mode == FrameMode.VERIFY and frame.to == EXPIRY_VERIFIER:
             if has_expiry_verifier_frame:
                 raise InvalidFrameError("multiple expiry verifier frames")
@@ -848,6 +1022,62 @@ def validate_frame_transaction(
         signature_hash=signature_hash,
         resolved_signers=resolved_signers,
     )
+
+
+def validate_proof_frame(tx: FrameTransaction, index: int) -> None:
+    """
+    Check the constraints specific to a [`PROOF`][p] frame, the frame at
+    `index` in `tx`.
+
+    The frame's `data` is a non-empty list of [`Dependency`] triples, each
+    naming a defined scheme. Since the frame executes nothing, it has no
+    target, no value and no flags, it is not part of an atomic batch, and it
+    carries no state gas. Its execution gas is exactly what checking the
+    witnesses of its triples costs, repeated triples included.
+
+    [p]: ref:ethereum.forks.bogota.transactions.frame_transaction.FrameMode.PROOF
+    [`Dependency`]: ref:ethereum.forks.bogota.transactions.frame_transaction.Dependency
+    """  # noqa: E501
+    from ..vm.gas import GasCosts
+
+    frame = tx.frames[index]
+
+    if ulen(frame.data) % DEPENDENCY_LENGTH != Uint(0):
+        raise InvalidFrameError(
+            "proof frame data is not a whole number of dependencies"
+        )
+    count = ulen(frame.data) // DEPENDENCY_LENGTH
+    if count == Uint(0) or count > MAX_DEPENDENCIES_PER_FRAME:
+        raise InvalidFrameError(
+            "proof frame declares no dependency or too many"
+        )
+
+    length = int(DEPENDENCY_LENGTH)
+    for start in range(0, len(frame.data), length):
+        scheme_word = frame.data[start : start + 32]
+        if scheme_word[:31] != b"\x00" * 31:
+            raise InvalidFrameError("proof frame scheme is not right-aligned")
+        if Uint(scheme_word[31]) != LEAN_SPHINCS_SCHEME:
+            raise InvalidFrameError("proof frame names an undefined scheme")
+
+    # A proof frame has no value either. That is not checked here: only a
+    # `SENDER` frame may carry value, which is checked for every frame.
+    if not isinstance(frame.to, Bytes0):
+        raise InvalidFrameError("proof frame with a target")
+    if frame.flags != FrameFlag(0):
+        raise InvalidFrameError("proof frame with flags")
+
+    # The frame's own flags are empty, so it belongs to an atomic batch only
+    # when the frame before it continues one.
+    if index > 0 and FrameFlag.ATOMIC_BATCH in tx.frames[index - 1].flags:
+        raise InvalidFrameError("proof frame in an atomic batch")
+
+    if Uint(frame.gas_limits.execution) != count * GasCosts.PROOF_VERIFICATION:
+        raise InvalidFrameError(
+            "proof frame execution gas does not match its dependencies"
+        )
+    if frame.gas_limits.state != U64(0):
+        raise InvalidFrameError("proof frame with state gas")
 
 
 def validate_nonce_keys(nonce_keys: Tuple[U256, ...]) -> None:
@@ -928,7 +1158,11 @@ def calculate_frame_transaction_intrinsic_cost(
     of each value-bearing frame with an explicit target other than the
     sender, covering the recipient balance write and transfer log, and
     the keyed nonce access cost of each non-zero nonce key (see
-    [`KEYED_NONCE_ACCESS`][kna]), covering the read and write of its slot.
+    [`KEYED_NONCE_ACCESS`][kna]), covering the read and write of its slot,
+    and the witness cost of each distinct dependency (see
+    [`TX_DEPENDENCY_WITNESS`][tdw]), covering the bytes of the witness a
+    block carries for it. A dependency two transactions share is paid by
+    both, although a block carries a single witness for it.
     The `signature` bytes of an entry with an empty `message` are priced
     as if all non-zero, since the canonical signature hash commits only
     to their length.
@@ -939,13 +1173,14 @@ def calculate_frame_transaction_intrinsic_cost(
     The calldata floor of [EIP-7976] counts every charged byte uniformly
     and is anchored on the costs the transaction always pays regardless
     of execution — the base cost, the per-frame cost, the signature
-    verification cost, the value transfer cost, and the keyed nonce
-    access cost — so it never undercuts the transaction's own intrinsic
-    base.
+    verification cost, the value transfer cost, the keyed nonce access
+    cost, and the dependency witness cost — so it never undercuts the
+    transaction's own intrinsic base.
 
     [EIP-7976]: https://eips.ethereum.org/EIPS/eip-7976
     [nc]: ref:ethereum.forks.bogota.transactions.frame_transaction.nonce_calldata
     [kna]: ref:ethereum.forks.bogota.vm.gas.GasCosts.KEYED_NONCE_ACCESS
+    [tdw]: ref:ethereum.forks.bogota.vm.gas.GasCosts.TX_DEPENDENCY_WITNESS
     """  # noqa: E501
     from ..vm.gas import GasCosts
     from . import IntrinsicGasCost, count_tokens_in_data
@@ -982,12 +1217,17 @@ def calculate_frame_transaction_intrinsic_cost(
 
     keyed_nonce_access_gas = ulen(tx.nonce_keys) * GasCosts.KEYED_NONCE_ACCESS
 
+    dependency_witness_gas = (
+        ulen(dependencies(tx)) * GasCosts.TX_DEPENDENCY_WITNESS
+    )
+
     base_execution_gas = (
         GasCosts.TX_FRAME_INTRINSIC
         + ulen(tx.frames) * GasCosts.TX_PER_FRAME
         + signature_gas
         + value_transfer_gas
         + keyed_nonce_access_gas
+        + dependency_witness_gas
     )
 
     return IntrinsicGasCost(

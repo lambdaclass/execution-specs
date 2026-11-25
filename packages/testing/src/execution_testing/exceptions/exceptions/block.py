@@ -181,3 +181,14 @@ class BlockException(ExceptionBase):
     """
     Block access list exceeds the gas limit constraint (EIP-7928).
     """
+    # --- Dependency witnesses (EIP-8504) --- #
+    INVALID_DEPENDENCY_WITNESSES = auto()
+    """
+    Block's dependency witnesses are not exactly one valid witness for each
+    distinct dependency of its transactions, in order.
+    """
+    INVALID_DEPENDENCY_WITNESSES_HASH = auto()
+    """
+    Block header's dependency witnesses hash does not match the hash of the
+    block's dependency witnesses.
+    """

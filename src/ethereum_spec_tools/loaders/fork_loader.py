@@ -353,6 +353,30 @@ class ForkLoad:
         return self._module("blocks").Withdrawal
 
     @property
+    def has_dependency_witnesses(self) -> bool:
+        """
+        Check if the fork's blocks carry witnesses for the dependencies of
+        their transactions (EIP-8504).
+        """
+        try:
+            self._module("dependency_witnesses")
+        except ModuleNotFoundError:
+            return False
+        return True
+
+    @property
+    def validate_dependency_witnesses(self) -> Any:
+        """validate_dependency_witnesses function of the fork."""
+        return self._module(
+            "dependency_witnesses"
+        ).validate_dependency_witnesses
+
+    @property
+    def hash_dependency_witnesses(self) -> Any:
+        """hash_dependency_witnesses function of the fork."""
+        return self._module("dependency_witnesses").hash_dependency_witnesses
+
+    @property
     def has_withdrawal(self) -> bool:
         """Check if the fork has a `Withdrawal` class."""
         return hasattr(self._module("blocks"), "Withdrawal")

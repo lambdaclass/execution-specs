@@ -42,6 +42,7 @@ from execution_testing.logging import (
 from .account_types import EOA
 from .blob_types import Blob
 from .chain_config_types import ChainConfigDefaults
+from .lean_sphincs import LeanSphincsKey
 from .phase_manager import TestPhase, TestPhaseManager
 from .receipt_types import TransactionReceipt
 from .utils import int_to_bytes, keccak256
@@ -497,6 +498,15 @@ class Transaction(
     frames: List[Frame] | None = None
     signatures: List[FrameSignature] | None = None
     nonce_keys: List[HexNumber] | None = None
+
+    dependency_signers: List[LeanSphincsKey] | None = Field(None, exclude=True)
+    """
+    EIP-8504: keys that sign the dependencies this transaction declares in
+    its `PROOF` frames. They are not part of the transaction. When a block
+    is built, each dependency of its transactions is signed by the key that
+    holds its public key, and the signatures become the block's dependency
+    witnesses.
+    """
 
     secret_key: Hash | None = None
     error: List[TransactionException] | TransactionException | None = Field(

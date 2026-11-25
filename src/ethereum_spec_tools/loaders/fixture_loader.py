@@ -135,6 +135,13 @@ class Load(BaseLoad):
             )
             parameters.append(withdrawals)
 
+        if "dependencyWitnesses" in json_block:
+            dependency_witnesses = tuple(
+                hex_to_bytes(witness)
+                for witness in json_block["dependencyWitnesses"]
+            )
+            parameters.append(dependency_witnesses)
+
         block = self.fork.Block(*parameters)
         block_header_hash = Hash32(
             hex_to_bytes(json_block["blockHeader"]["hash"])
@@ -200,5 +207,11 @@ class Load(BaseLoad):
         if "slotNumber" in raw:
             slot_number = hex_to_u64(raw.get("slotNumber"))
             parameters.append(slot_number)
+
+        if "dependencyWitnessesHash" in raw:
+            dependency_witnesses_hash = hex_to_bytes32(
+                raw.get("dependencyWitnessesHash")
+            )
+            parameters.append(dependency_witnesses_hash)
 
         return self.fork.Header(*parameters)

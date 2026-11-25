@@ -270,6 +270,9 @@ def add_genesis_block(
     if has_field(hardfork.Header, "slot_number"):
         fields["slot_number"] = U64(0)
 
+    if has_field(hardfork.Header, "dependency_witnesses_hash"):
+        fields["dependency_witnesses_hash"] = keccak256(rlp.encode([]))
+
     genesis_header = hardfork.Header(**fields)
 
     block_fields = {
@@ -283,6 +286,9 @@ def add_genesis_block(
 
     if has_field(hardfork.Block, "requests"):
         block_fields["requests"] = ()
+
+    if has_field(hardfork.Block, "dependency_witnesses"):
+        block_fields["dependency_witnesses"] = ()
 
     genesis_block = hardfork.Block(**block_fields)
 

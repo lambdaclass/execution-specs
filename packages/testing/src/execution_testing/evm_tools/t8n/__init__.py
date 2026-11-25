@@ -468,6 +468,25 @@ class T8N(Load):
 
         self._process_txs(block_env, block_output)
 
+        # EIP-8504: the block carries one valid witness for each distinct
+        # dependency of its transactions. The fork's `execute_block` checks
+        # this before executing anything. A block with a rejected
+        # transaction is invalid whatever its witnesses are, and which of
+        # the two defects a client reports first is not specified, so here
+        # the rejection alone is reported and the witnesses are only
+        # checked when every transaction was accepted.
+        if (
+            self.fork.has_dependency_witnesses
+            and not self.rejected_transactions
+        ):
+            self.fork.validate_dependency_witnesses(
+                tuple(self.included_txs),
+                tuple(
+                    bytes(witness)
+                    for witness in self.env.dependency_witnesses or []
+                ),
+            )
+
         # EIP-7928: Post-execution operations use index N+1
         if self.fork.has_hash_block_access_list:
             block_env.block_access_list_builder.block_access_index = (

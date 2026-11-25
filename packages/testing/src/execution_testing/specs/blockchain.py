@@ -97,6 +97,8 @@ from execution_testing.test_types import (
     TestPhase,
     Transaction,
     Withdrawal,
+    block_dependencies,
+    sign_dependencies,
 )
 from execution_testing.test_types.block_access_list import (
     BlockAccessList,
@@ -338,6 +340,7 @@ class Header(CamelModel):
     requests_hash: Removable | Hash | None = None
     block_access_list_hash: Removable | Hash | None = None
     slot_number: Removable | HexNumber | None = None
+    dependency_witnesses_hash: Removable | Hash | None = None
 
     REMOVE_FIELD: ClassVar[Removable] = Removable()
     """
@@ -480,6 +483,12 @@ class Block(Header):
     """EIP-7928: override only the engine newPayload blockAccessList field."""
     engine_new_payload_slot_number: HexNumber | None = None
     """EIP-7843: override only the engine payload slotNumber field."""
+    dependency_witnesses: List[Bytes] | None = None
+    """
+    EIP-8504: the block's dependency witnesses. When unset, they are the
+    signatures of the block's dependencies by the `dependency_signers` of
+    its transactions. Set it to build a block whose witnesses are not those.
+    """
     expected_gas_used: int | None = None
     """Expected gas used for the block."""
 
@@ -634,6 +643,7 @@ class BuiltBlock(CamelModel):
     block_access_list: BlockAccessList | None
     engine_new_payload_block_access_list: Bytes | None = None
     engine_new_payload_slot_number: HexNumber | None = None
+    dependency_witnesses: List[Bytes] | None = None
 
     def record_landings(self, context: RecordedPostStateContext) -> None:
         """Record in `context` that this block's transactions landed."""
@@ -693,6 +703,7 @@ class BuiltBlock(CamelModel):
             block_access_list=self.block_access_list
             if self.block_access_list
             else None,
+            dependency_witnesses=self.dependency_witnesses,
             fork=self.fork,
         ).with_rlp(txs=self.txs)
 
@@ -761,6 +772,7 @@ class BuiltBlock(CamelModel):
             block_access_list=self.block_access_list.rlp
             if self.block_access_list
             else None,
+            dependency_witnesses=self.dependency_witnesses,
             execution_payload_modifier=self.engine_payload_modifier(),
             validation_error=self.expected_exception,
             error_code=self.engine_api_error_code,
@@ -798,6 +810,7 @@ class BuiltBlock(CamelModel):
                 if self.withdrawals is not None
                 else None
             ),
+            dependency_witnesses=self.dependency_witnesses,
         )
 
     def verify_block_exception(
@@ -1115,6 +1128,7 @@ class BlockchainTest(BaseTest):
             FixtureBlockBase(
                 header=genesis,
                 withdrawals=None if env.withdrawals is None else [],
+                dependency_witnesses=env.dependency_witnesses,
             ).with_rlp(txs=[]),
         )
 
@@ -1167,6 +1181,30 @@ class BlockchainTest(BaseTest):
                 for tx in txs
             ]
         txs = [tx.with_signature_and_sender() for tx in txs]
+
+        # EIP-8504: the block carries one witness for each distinct
+        # dependency of its transactions. A transaction's dependencies are
+        # only fixed once it has its signature entries, hence after signing.
+        #
+        # The dependencies of a transaction expected to be rejected count
+        # too. Such a block is invalid either way, but a client may check
+        # the witnesses before it validates the transactions: with a witness
+        # for every dependency it can derive, the rejected transaction is
+        # the block's only defect whichever check runs first.
+        dependency_witnesses: List[Bytes] | None = None
+        if fork.header_dependency_witnesses_hash_required():
+            if block.dependency_witnesses is not None:
+                dependency_witnesses = block.dependency_witnesses
+            else:
+                dependency_witnesses = sign_dependencies(
+                    block_dependencies(txs),
+                    [
+                        signer
+                        for tx in block.txs
+                        for signer in tx.dependency_signers or []
+                    ],
+                )
+            env = env.copy(dependency_witnesses=dependency_witnesses)
 
         if (failing_tx_count := len([tx for tx in txs if tx.error])) > 0:
             if failing_tx_count > 1:
@@ -1447,6 +1485,7 @@ class BlockchainTest(BaseTest):
             engine_new_payload_slot_number=(
                 block.engine_new_payload_slot_number
             ),
+            dependency_witnesses=dependency_witnesses,
         )
         built_block: BuiltBlock
         if transition_tool_output.engine_payload is not None:

@@ -28,6 +28,12 @@ from .block_types import (
     Withdrawal,
 )
 from .chain_config_types import ChainConfig, ChainConfigDefaults
+from .dependency_types import (
+    Dependency,
+    block_dependencies,
+    sign_dependencies,
+    transaction_dependencies,
+)
 from .helpers import (
     DETERMINISTIC_FACTORY_ADDRESS,
     DETERMINISTIC_FACTORY_BYTECODE,
@@ -40,6 +46,7 @@ from .helpers import (
     contract_address_from_hash,
     eoa_from_hash,
 )
+from .lean_sphincs import LeanSphincsKey
 from .phase_manager import TestPhase, TestPhaseManager
 from .receipt_types import (
     FrameReceipt,
@@ -81,6 +88,11 @@ from .utils import Removable, keccak256
 
 __all__ = (
     "DETERMINISTIC_FACTORY_BYTECODE",
+    "Dependency",
+    "LeanSphincsKey",
+    "block_dependencies",
+    "sign_dependencies",
+    "transaction_dependencies",
     "DETERMINISTIC_FACTORY_ADDRESS",
     "Account",
     "Alloc",

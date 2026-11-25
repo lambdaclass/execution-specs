@@ -86,6 +86,11 @@ class GasCosts:
     # Intrinsic cost of each non-zero EIP-8250 nonce key; 0 before keyed
     # nonces are introduced.
     KEYED_NONCE_ACCESS: int = 0
+    # Execution gas an EIP-8504 proof frame carries per dependency, and
+    # intrinsic cost of the witness of each distinct dependency of a
+    # transaction; 0 before proof frames are introduced.
+    PROOF_VERIFICATION: int = 0
+    TX_DEPENDENCY_WITNESS: int = 0
 
     # EIP-7906 transaction diff instructions, 0 before the EIP.
     OPCODE_TXTRACE: int = 0

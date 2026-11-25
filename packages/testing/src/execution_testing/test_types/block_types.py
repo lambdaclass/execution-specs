@@ -43,6 +43,9 @@ FORK_GATED_FIELDS: Dict[str, Callable[[Fork], bool]] = {
     ),
     "slot_number": lambda fork: fork.header_slot_number_required(),
     "parent_slot_number": lambda fork: fork.header_slot_number_required(),
+    "dependency_witnesses": (
+        lambda fork: fork.header_dependency_witnesses_hash_required()
+    ),
 }
 """
 Environment fields, current and parent, that only some block headers
@@ -172,6 +175,10 @@ class Environment(EnvironmentGeneric[ZeroPaddedHexNumber]):
     block_access_list_hash: Hash | None = Field(None)
     block_access_lists: Bytes | None = Field(None)
 
+    # EIP-8504: the witnesses the block carries for the dependencies of its
+    # transactions, in the order of those dependencies
+    dependency_witnesses: List[Bytes] | None = Field(None)
+
     @computed_field  # type: ignore[prop-decorator]
     @cached_property
     def parent_hash(self) -> Hash | None:
@@ -194,6 +201,12 @@ class Environment(EnvironmentGeneric[ZeroPaddedHexNumber]):
 
         if fork.header_withdrawals_required() and self.withdrawals is None:
             updated_values["withdrawals"] = []
+
+        if (
+            fork.header_dependency_witnesses_hash_required()
+            and self.dependency_witnesses is None
+        ):
+            updated_values["dependency_witnesses"] = []
 
         if (
             fork.header_base_fee_required()

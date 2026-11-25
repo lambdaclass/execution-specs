@@ -970,6 +970,11 @@ class Frontier(BaseFork):
         return False
 
     @classmethod
+    def header_dependency_witnesses_hash_required(cls) -> bool:
+        """At genesis, header must not contain dependency witnesses hash."""
+        return False
+
+    @classmethod
     def engine_new_payload_blob_hashes(cls) -> bool:
         """At genesis, payloads do not have blob hashes."""
         return False
@@ -987,6 +992,11 @@ class Frontier(BaseFork):
     @classmethod
     def engine_execution_payload_block_access_list(cls) -> bool:
         """At genesis, payloads do not have block access list."""
+        return False
+
+    @classmethod
+    def engine_execution_payload_dependency_witnesses(cls) -> bool:
+        """At genesis, payloads do not have dependency witnesses."""
         return False
 
     @classmethod

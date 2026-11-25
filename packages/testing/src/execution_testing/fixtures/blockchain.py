@@ -66,6 +66,7 @@ from execution_testing.exceptions import (
 )
 from execution_testing.forks import (
     Amsterdam,
+    Bogota,
     Cancun,
     Fork,
     Paris,
@@ -247,6 +248,10 @@ class FixtureHeader(CamelModel):
         Annotated[ZeroPaddedHexNumber, HeaderForkRequirement("slot_number")]
         | None
     ) = Field(None)
+    dependency_witnesses_hash: (
+        Annotated[Hash, HeaderForkRequirement("dependency_witnesses_hash")]
+        | None
+    ) = Field(None)
 
     fork: Fork | None = Field(None, exclude=True)
 
@@ -385,7 +390,8 @@ class FixtureHeader(CamelModel):
     def genesis(cls, fork: Fork, env: Environment, state_root: Hash) -> Self:
         """Get the genesis header for the given fork."""
         environment_values = env.model_dump(
-            exclude_none=True, exclude={"withdrawals", "slot_number"}
+            exclude_none=True,
+            exclude={"withdrawals", "slot_number", "dependency_witnesses"},
         )
         if env.withdrawals is not None:
             environment_values["withdrawals_root"] = Withdrawal.list_root(
@@ -404,6 +410,8 @@ class FixtureHeader(CamelModel):
             extras["slot_number"] = (
                 int(env.slot_number) if env.slot_number is not None else 0
             )
+        if fork.header_dependency_witnesses_hash_required():
+            extras["dependency_witnesses_hash"] = dependency_witnesses_hash([])
         return cls(**environment_values, **extras)
 
 
@@ -423,6 +431,24 @@ MAX_WITHDRAWALS_PER_PAYLOAD = 2**4
 # lists; revisit once the value is finalized and verified.
 MAX_BLOCK_ACCESS_LIST_BYTES = 2**23
 """Placeholder cap for the RLP-encoded block access list byte list."""
+
+# EIP-8504 sets no maximum for either list: the consensus layer's lists
+# are progressive. These mirror the transaction limits so that the
+# bounded SSZ lists used here can hold any valid payload.
+MAX_BYTES_PER_DEPENDENCY_WITNESS = MAX_BYTES_PER_TRANSACTION
+"""Placeholder cap for the size of a single dependency witness."""
+
+MAX_DEPENDENCY_WITNESSES_PER_PAYLOAD = MAX_TRANSACTIONS_PER_PAYLOAD
+"""Placeholder cap for the dependency witness count per payload."""
+
+
+def dependency_witnesses_hash(witnesses: Sequence[Bytes]) -> Hash:
+    """
+    Return the commitment a block header holds to the block's dependency
+    witnesses (EIP-8504): the hash of their RLP-encoded list.
+    """
+    encoded = eth_rlp.encode([bytes(witness) for witness in witnesses])
+    return Bytes(encoded).keccak256()
 
 
 class ForkScopedSSZModel(SSZModel):
@@ -494,6 +520,18 @@ class FixtureExecutionPayload(ForkScopedSSZModel):
         Annotated[Bytes, byte_list(MAX_BLOCK_ACCESS_LIST_BYTES)] | None
     ) = Field(None, description="RLP-serialized EIP-7928 Block Access List")
     slot_number: Uint64 | None = Field(None)
+    dependency_witnesses: (
+        Annotated[
+            List[
+                Annotated[Bytes, byte_list(MAX_BYTES_PER_DEPENDENCY_WITNESS)]
+            ],
+            ssz_list(MAX_DEPENDENCY_WITNESSES_PER_PAYLOAD),
+        ]
+        | None
+    ) = Field(
+        None,
+        description="EIP-8504 witnesses of the block's dependencies",
+    )
 
     __ssz_schema__ = SSZForkSchema(
         base_fork=Paris,
@@ -517,6 +555,7 @@ class FixtureExecutionPayload(ForkScopedSSZModel):
             Shanghai: ("withdrawals",),
             Cancun: ("blob_gas_used", "excess_blob_gas"),
             Amsterdam: ("block_access_list", "slot_number"),
+            Bogota: ("dependency_witnesses",),
         },
     )
 
@@ -527,16 +566,19 @@ class FixtureExecutionPayload(ForkScopedSSZModel):
         transactions: List[Transaction],
         withdrawals: List[Withdrawal] | None,
         block_access_list: Bytes | None = None,
+        dependency_witnesses: List[Bytes] | None = None,
     ) -> Self:
         """
         Return FixtureExecutionPayload from a FixtureHeader, a list of
-        transactions, a list of withdrawals, and an optional block access list.
+        transactions, a list of withdrawals, an optional block access list,
+        and an optional list of dependency witnesses.
         """
         return cls(
             **header.model_dump(exclude_none=True),
             transactions=[tx.rlp() for tx in transactions],
             withdrawals=withdrawals,
             block_access_list=block_access_list,
+            dependency_witnesses=dependency_witnesses,
         )
 
 
@@ -558,6 +600,7 @@ class FixtureExecutionPayloadModifier(CamelModel):
 
     block_access_list: Removable | Bytes | None = None
     slot_number: Removable | HexNumber | None = None
+    dependency_witnesses: Removable | List[Bytes] | None = None
 
     REMOVE_FIELD: ClassVar[Removable] = Removable()
     """Sentinel to specify that a payload field should be removed."""
@@ -709,6 +752,7 @@ class FixtureEngineNewPayload(CamelModel):
         withdrawals: List[Withdrawal] | None,
         requests: List[Bytes] | None,
         block_access_list: Bytes | None = None,
+        dependency_witnesses: List[Bytes] | None = None,
         execution_payload_modifier: (
             "FixtureExecutionPayloadModifier | None"
         ) = None,
@@ -739,11 +783,21 @@ class FixtureEngineNewPayload(CamelModel):
                     f"`ExecutionPayload` for >={fork}."
                 )
 
+        if (
+            fork.engine_execution_payload_dependency_witnesses()
+            and dependency_witnesses is None
+        ):
+            raise ValueError(
+                "`dependency_witnesses` is required in engine "
+                f"`ExecutionPayload` for >={fork}."
+            )
+
         execution_payload = FixtureExecutionPayload.from_fixture_header(
             header=header,
             transactions=transactions,
             withdrawals=withdrawals,
             block_access_list=block_access_list,
+            dependency_witnesses=dependency_witnesses,
         )
         if execution_payload_modifier is not None:
             execution_payload = execution_payload_modifier.apply(
@@ -824,6 +878,7 @@ def block_rlp_encode_list(
     serialized_txs: List[Any],
     ommers: List[FixtureHeader],
     withdrawals: List[FixtureWithdrawal] | None,
+    dependency_witnesses: List[Bytes] | None = None,
 ) -> List[Any]:
     """Return the RLP-serializable list that makes up a block."""
     block: List[Any] = [
@@ -835,6 +890,9 @@ def block_rlp_encode_list(
     if withdrawals is not None:
         block.append([w.to_serializable_list() for w in withdrawals])
 
+    if dependency_witnesses is not None:
+        block.append([bytes(witness) for witness in dependency_witnesses])
+
     return block
 
 
@@ -843,6 +901,7 @@ def block_rlp_size(
     txs: List[Transaction],
     ommers: List[FixtureHeader],
     withdrawals: List[FixtureWithdrawal] | None,
+    dependency_witnesses: List[Bytes] | None = None,
 ) -> int:
     """
     Return the encoded size of the block, without encoding it.
@@ -857,6 +916,7 @@ def block_rlp_size(
             [KnownEncodedSize(tx.serializable_size) for tx in txs],
             ommers,
             withdrawals,
+            dependency_witnesses,
         )
     )
 
@@ -888,6 +948,9 @@ class FixtureBlockBase(CamelModel):
         default_factory=list, alias="uncleHeaders"
     )
     withdrawals: List[FixtureWithdrawal] | None = None
+    dependency_witnesses: List[Bytes] | None = Field(
+        None, description="EIP-8504 witnesses of the block's dependencies"
+    )
     receipts: List[FixtureTransactionReceipt] | None = None
     block_access_list: BlockAccessList | None = Field(
         None, description="EIP-7928 Block Access List"
@@ -910,6 +973,7 @@ class FixtureBlockBase(CamelModel):
                     [tx.serializable_list for tx in txs],
                     self.ommers,
                     self.withdrawals,
+                    self.dependency_witnesses,
                 )
             ),
         )
